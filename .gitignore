@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.log
+coverage/
+.idea/
+.vscode/
+bin/
+go.work.sum
+

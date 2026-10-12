@@ -1,0 +1,7 @@
+go 1.27.0
+
+use (
+	./gen/go
+	./services/inventory
+	./services/order
+)

@@ -1,0 +1,21 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/tmtuan04/ticketing/gen/go
+plugins:
+  # Plugin chạy local (không cần mạng tới buf.build)
+  # protoc-gen-go, protoc-gen-go-grpc: go install; ts-proto: npm i -D ts-proto (ở root)
+  - local: protoc-gen-go
+    out: ../gen/go
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: ../gen/go
+    opt: paths=source_relative
+  - local: ..\node_modules\.bin\protoc-gen-ts_proto.cmd
+    out: ../gen/ts
+    opt:
+      - nestJs=true
+      - addGrpcMetadata=true
+      - esModuleInterop=true
