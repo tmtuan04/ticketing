@@ -19,3 +19,5 @@ plugins:
       - nestJs=true
       - addGrpcMetadata=true
       - esModuleInterop=true
+      # NestJS serialize bằng @grpc/proto-loader: Timestamp là { seconds, nanos }, không phải Date
+      - useDate=false

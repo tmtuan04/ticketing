@@ -1,18 +1,113 @@
 syntax = "proto3";
+
 package ticketing.inventory.v1;
 
+import "google/protobuf/timestamp.proto";
+
+// InventoryService quản lý trạng thái ghế của từng event: giữ, nhả, xác nhận bán.
 service InventoryService {
+  // Catalog gọi khi publish event. Idempotent: gọi lại không tạo trùng ghế.
+  rpc InitEventInventory(InitEventInventoryRequest) returns (InitEventInventoryResponse);
+  // Giữ một nhóm ghế trong TTL. Trùng idempotency_key thì trả lại hold cũ.
   rpc HoldSeats(HoldSeatsRequest) returns (HoldSeatsResponse);
+  // User hủy giữ chỗ, hoặc Order hủy khi thanh toán lỗi (Phase 2).
+  rpc ReleaseHold(ReleaseHoldRequest) returns (ReleaseHoldResponse);
+  // held -> sold. Chỉ thành công khi hold còn hạn.
+  rpc ConfirmHold(ConfirmHoldRequest) returns (ConfirmHoldResponse);
+  rpc GetHold(GetHoldRequest) returns (GetHoldResponse);
+  // Trạng thái từng ghế, để vẽ sơ đồ ghế.
+  rpc ListSeatAvailability(ListSeatAvailabilityRequest) returns (ListSeatAvailabilityResponse);
+}
+
+enum SeatStatus {
+  SEAT_STATUS_UNSPECIFIED = 0;
+  SEAT_STATUS_AVAILABLE = 1;
+  SEAT_STATUS_HELD = 2;
+  SEAT_STATUS_SOLD = 3;
+}
+
+enum HoldStatus {
+  HOLD_STATUS_UNSPECIFIED = 0;
+  HOLD_STATUS_ACTIVE = 1;
+  HOLD_STATUS_RELEASED = 2;
+  HOLD_STATUS_CONFIRMED = 3;
+  HOLD_STATUS_EXPIRED = 4;
+}
+
+message Hold {
+  string id = 1;
+  string event_id = 2;
+  string user_id = 3;
+  repeated string seat_ids = 4;
+  HoldStatus status = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message SeatAvailability {
+  string seat_id = 1;
+  SeatStatus status = 2;
+}
+
+message SeatsUnavailable {
+  // Những ghế trong request đã bị người khác giữ hoặc đã bán.
+  repeated string seat_ids = 1;
+}
+
+message InitEventInventoryRequest {
+  string event_id = 1;
+  repeated string seat_ids = 2;
+}
+
+message InitEventInventoryResponse {
+  int32 seat_count = 1;
 }
 
 message HoldSeatsRequest {
   string event_id = 1;
-  repeated string seat_ids = 2;
-  string idempotency_key = 3;
+  string user_id = 2;
+  repeated string seat_ids = 3;
+  string idempotency_key = 4;
 }
 
 message HoldSeatsResponse {
+  // Ghế bị chiếm là kết quả nghiệp vụ bình thường, không phải gRPC error.
+  oneof result {
+    Hold hold = 1;
+    SeatsUnavailable unavailable = 2;
+  }
+}
+
+message ReleaseHoldRequest {
   string hold_id = 1;
-  int64 expires_at_unix = 2;
-  repeated string unavailable_seat_ids = 3;
+  // Hold phải thuộc về user này, ngược lại trả PERMISSION_DENIED.
+  string user_id = 2;
+}
+
+message ReleaseHoldResponse {
+  Hold hold = 1;
+}
+
+message ConfirmHoldRequest {
+  string hold_id = 1;
+}
+
+message ConfirmHoldResponse {
+  Hold hold = 1;
+}
+
+message GetHoldRequest {
+  string hold_id = 1;
+}
+
+message GetHoldResponse {
+  Hold hold = 1;
+}
+
+message ListSeatAvailabilityRequest {
+  string event_id = 1;
+}
+
+message ListSeatAvailabilityResponse {
+  repeated SeatAvailability seats = 1;
 }

@@ -19,14 +19,31 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	InventoryService_HoldSeats_FullMethodName = "/ticketing.inventory.v1.InventoryService/HoldSeats"
+	InventoryService_InitEventInventory_FullMethodName   = "/ticketing.inventory.v1.InventoryService/InitEventInventory"
+	InventoryService_HoldSeats_FullMethodName            = "/ticketing.inventory.v1.InventoryService/HoldSeats"
+	InventoryService_ReleaseHold_FullMethodName          = "/ticketing.inventory.v1.InventoryService/ReleaseHold"
+	InventoryService_ConfirmHold_FullMethodName          = "/ticketing.inventory.v1.InventoryService/ConfirmHold"
+	InventoryService_GetHold_FullMethodName              = "/ticketing.inventory.v1.InventoryService/GetHold"
+	InventoryService_ListSeatAvailability_FullMethodName = "/ticketing.inventory.v1.InventoryService/ListSeatAvailability"
 )
 
 // InventoryServiceClient is the client API for InventoryService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// InventoryService quản lý trạng thái ghế của từng event: giữ, nhả, xác nhận bán.
 type InventoryServiceClient interface {
+	// Catalog gọi khi publish event. Idempotent: gọi lại không tạo trùng ghế.
+	InitEventInventory(ctx context.Context, in *InitEventInventoryRequest, opts ...grpc.CallOption) (*InitEventInventoryResponse, error)
+	// Giữ một nhóm ghế trong TTL. Trùng idempotency_key thì trả lại hold cũ.
 	HoldSeats(ctx context.Context, in *HoldSeatsRequest, opts ...grpc.CallOption) (*HoldSeatsResponse, error)
+	// User hủy giữ chỗ, hoặc Order hủy khi thanh toán lỗi (Phase 2).
+	ReleaseHold(ctx context.Context, in *ReleaseHoldRequest, opts ...grpc.CallOption) (*ReleaseHoldResponse, error)
+	// held -> sold. Chỉ thành công khi hold còn hạn.
+	ConfirmHold(ctx context.Context, in *ConfirmHoldRequest, opts ...grpc.CallOption) (*ConfirmHoldResponse, error)
+	GetHold(ctx context.Context, in *GetHoldRequest, opts ...grpc.CallOption) (*GetHoldResponse, error)
+	// Trạng thái từng ghế, để vẽ sơ đồ ghế.
+	ListSeatAvailability(ctx context.Context, in *ListSeatAvailabilityRequest, opts ...grpc.CallOption) (*ListSeatAvailabilityResponse, error)
 }
 
 type inventoryServiceClient struct {
@@ -35,6 +52,16 @@ type inventoryServiceClient struct {
 
 func NewInventoryServiceClient(cc grpc.ClientConnInterface) InventoryServiceClient {
 	return &inventoryServiceClient{cc}
+}
+
+func (c *inventoryServiceClient) InitEventInventory(ctx context.Context, in *InitEventInventoryRequest, opts ...grpc.CallOption) (*InitEventInventoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InitEventInventoryResponse)
+	err := c.cc.Invoke(ctx, InventoryService_InitEventInventory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *inventoryServiceClient) HoldSeats(ctx context.Context, in *HoldSeatsRequest, opts ...grpc.CallOption) (*HoldSeatsResponse, error) {
@@ -47,11 +74,63 @@ func (c *inventoryServiceClient) HoldSeats(ctx context.Context, in *HoldSeatsReq
 	return out, nil
 }
 
+func (c *inventoryServiceClient) ReleaseHold(ctx context.Context, in *ReleaseHoldRequest, opts ...grpc.CallOption) (*ReleaseHoldResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReleaseHoldResponse)
+	err := c.cc.Invoke(ctx, InventoryService_ReleaseHold_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *inventoryServiceClient) ConfirmHold(ctx context.Context, in *ConfirmHoldRequest, opts ...grpc.CallOption) (*ConfirmHoldResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmHoldResponse)
+	err := c.cc.Invoke(ctx, InventoryService_ConfirmHold_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *inventoryServiceClient) GetHold(ctx context.Context, in *GetHoldRequest, opts ...grpc.CallOption) (*GetHoldResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetHoldResponse)
+	err := c.cc.Invoke(ctx, InventoryService_GetHold_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *inventoryServiceClient) ListSeatAvailability(ctx context.Context, in *ListSeatAvailabilityRequest, opts ...grpc.CallOption) (*ListSeatAvailabilityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSeatAvailabilityResponse)
+	err := c.cc.Invoke(ctx, InventoryService_ListSeatAvailability_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // InventoryServiceServer is the server API for InventoryService service.
 // All implementations must embed UnimplementedInventoryServiceServer
 // for forward compatibility.
+//
+// InventoryService quản lý trạng thái ghế của từng event: giữ, nhả, xác nhận bán.
 type InventoryServiceServer interface {
+	// Catalog gọi khi publish event. Idempotent: gọi lại không tạo trùng ghế.
+	InitEventInventory(context.Context, *InitEventInventoryRequest) (*InitEventInventoryResponse, error)
+	// Giữ một nhóm ghế trong TTL. Trùng idempotency_key thì trả lại hold cũ.
 	HoldSeats(context.Context, *HoldSeatsRequest) (*HoldSeatsResponse, error)
+	// User hủy giữ chỗ, hoặc Order hủy khi thanh toán lỗi (Phase 2).
+	ReleaseHold(context.Context, *ReleaseHoldRequest) (*ReleaseHoldResponse, error)
+	// held -> sold. Chỉ thành công khi hold còn hạn.
+	ConfirmHold(context.Context, *ConfirmHoldRequest) (*ConfirmHoldResponse, error)
+	GetHold(context.Context, *GetHoldRequest) (*GetHoldResponse, error)
+	// Trạng thái từng ghế, để vẽ sơ đồ ghế.
+	ListSeatAvailability(context.Context, *ListSeatAvailabilityRequest) (*ListSeatAvailabilityResponse, error)
 	mustEmbedUnimplementedInventoryServiceServer()
 }
 
@@ -62,8 +141,23 @@ type InventoryServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedInventoryServiceServer struct{}
 
+func (UnimplementedInventoryServiceServer) InitEventInventory(context.Context, *InitEventInventoryRequest) (*InitEventInventoryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InitEventInventory not implemented")
+}
 func (UnimplementedInventoryServiceServer) HoldSeats(context.Context, *HoldSeatsRequest) (*HoldSeatsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method HoldSeats not implemented")
+}
+func (UnimplementedInventoryServiceServer) ReleaseHold(context.Context, *ReleaseHoldRequest) (*ReleaseHoldResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReleaseHold not implemented")
+}
+func (UnimplementedInventoryServiceServer) ConfirmHold(context.Context, *ConfirmHoldRequest) (*ConfirmHoldResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConfirmHold not implemented")
+}
+func (UnimplementedInventoryServiceServer) GetHold(context.Context, *GetHoldRequest) (*GetHoldResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetHold not implemented")
+}
+func (UnimplementedInventoryServiceServer) ListSeatAvailability(context.Context, *ListSeatAvailabilityRequest) (*ListSeatAvailabilityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSeatAvailability not implemented")
 }
 func (UnimplementedInventoryServiceServer) mustEmbedUnimplementedInventoryServiceServer() {}
 func (UnimplementedInventoryServiceServer) testEmbeddedByValue()                          {}
@@ -86,6 +180,24 @@ func RegisterInventoryServiceServer(s grpc.ServiceRegistrar, srv InventoryServic
 	s.RegisterService(&InventoryService_ServiceDesc, srv)
 }
 
+func _InventoryService_InitEventInventory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InitEventInventoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InventoryServiceServer).InitEventInventory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InventoryService_InitEventInventory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InventoryServiceServer).InitEventInventory(ctx, req.(*InitEventInventoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _InventoryService_HoldSeats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(HoldSeatsRequest)
 	if err := dec(in); err != nil {
@@ -104,6 +216,78 @@ func _InventoryService_HoldSeats_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InventoryService_ReleaseHold_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleaseHoldRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InventoryServiceServer).ReleaseHold(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InventoryService_ReleaseHold_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InventoryServiceServer).ReleaseHold(ctx, req.(*ReleaseHoldRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InventoryService_ConfirmHold_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmHoldRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InventoryServiceServer).ConfirmHold(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InventoryService_ConfirmHold_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InventoryServiceServer).ConfirmHold(ctx, req.(*ConfirmHoldRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InventoryService_GetHold_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetHoldRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InventoryServiceServer).GetHold(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InventoryService_GetHold_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InventoryServiceServer).GetHold(ctx, req.(*GetHoldRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InventoryService_ListSeatAvailability_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSeatAvailabilityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InventoryServiceServer).ListSeatAvailability(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InventoryService_ListSeatAvailability_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InventoryServiceServer).ListSeatAvailability(ctx, req.(*ListSeatAvailabilityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // InventoryService_ServiceDesc is the grpc.ServiceDesc for InventoryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -112,8 +296,28 @@ var InventoryService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*InventoryServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "InitEventInventory",
+			Handler:    _InventoryService_InitEventInventory_Handler,
+		},
+		{
 			MethodName: "HoldSeats",
 			Handler:    _InventoryService_HoldSeats_Handler,
+		},
+		{
+			MethodName: "ReleaseHold",
+			Handler:    _InventoryService_ReleaseHold_Handler,
+		},
+		{
+			MethodName: "ConfirmHold",
+			Handler:    _InventoryService_ConfirmHold_Handler,
+		},
+		{
+			MethodName: "GetHold",
+			Handler:    _InventoryService_GetHold_Handler,
+		},
+		{
+			MethodName: "ListSeatAvailability",
+			Handler:    _InventoryService_ListSeatAvailability_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

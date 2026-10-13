@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package ticketing.catalog.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// CatalogService: API đọc, dùng cho user và các service khác.
+service CatalogService {
+  rpc GetEvent(GetEventRequest) returns (GetEventResponse);
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
+  rpc ListSeats(ListSeatsRequest) returns (ListSeatsResponse);
+}
+
+// CatalogAdminService: API ghi. Gateway kiểm tra role admin trước khi gọi.
+service CatalogAdminService {
+  rpc CreateVenue(CreateVenueRequest) returns (CreateVenueResponse);
+  rpc CreateEvent(CreateEventRequest) returns (CreateEventResponse);
+  // Sinh sơ đồ ghế theo từng khối (section x số hàng x số ghế mỗi hàng).
+  rpc GenerateSeats(GenerateSeatsRequest) returns (GenerateSeatsResponse);
+  // DRAFT -> PUBLISHED, đồng thời gọi inventory.InitEventInventory.
+  rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse);
+}
+
+enum EventStatus {
+  EVENT_STATUS_UNSPECIFIED = 0;
+  EVENT_STATUS_DRAFT = 1;
+  EVENT_STATUS_PUBLISHED = 2;
+}
+
+message Venue {
+  string id = 1;
+  string name = 2;
+  string address = 3;
+}
+
+message TicketTier {
+  string id = 1;
+  string name = 2; // VIP, Standard...
+  int64 price_amount = 3; // đơn vị nhỏ nhất (VND: đồng)
+  string currency = 4; // "VND"
+}
+
+message Event {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  Venue venue = 4;
+  google.protobuf.Timestamp starts_at = 5;
+  EventStatus status = 6;
+  repeated TicketTier tiers = 7;
+}
+
+message Seat {
+  string id = 1;
+  string section = 2;
+  string row = 3;
+  int32 number = 4;
+  string tier_id = 5;
+}
+
+message GetEventRequest {
+  string event_id = 1;
+}
+
+message GetEventResponse {
+  Event event = 1;
+}
+
+message ListEventsRequest {
+  int32 page_size = 1;
+  string page_token = 2; // rỗng = trang đầu
+}
+
+message ListEventsResponse {
+  repeated Event events = 1;
+  string next_page_token = 2; // rỗng = hết
+}
+
+message ListSeatsRequest {
+  string event_id = 1;
+}
+
+message ListSeatsResponse {
+  repeated Seat seats = 1;
+}
+
+message CreateVenueRequest {
+  string name = 1;
+  string address = 2;
+}
+
+message CreateVenueResponse {
+  Venue venue = 1;
+}
+
+message CreateEventRequest {
+  message TierInput {
+    string name = 1;
+    int64 price_amount = 2;
+    string currency = 3;
+  }
+  string name = 1;
+  string description = 2;
+  string venue_id = 3;
+  google.protobuf.Timestamp starts_at = 4;
+  repeated TierInput tiers = 5;
+}
+
+message CreateEventResponse {
+  Event event = 1;
+}
+
+message GenerateSeatsRequest {
+  message SeatBlock {
+    string section = 1; // "A"
+    int32 row_count = 2; // 10 hàng
+    int32 seats_per_row = 3; // 20 ghế mỗi hàng
+    string tier_id = 4;
+  }
+  string event_id = 1;
+  repeated SeatBlock blocks = 2;
+}
+
+message GenerateSeatsResponse {
+  int32 seat_count = 1;
+}
+
+message PublishEventRequest {
+  string event_id = 1;
+}
+
+message PublishEventResponse {
+  Event event = 1;
+}

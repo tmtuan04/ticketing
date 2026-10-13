@@ -8,37 +8,187 @@
 import type { Metadata } from "@grpc/grpc-js";
 import { GrpcMethod, GrpcStreamMethod } from "@nestjs/microservices";
 import { Observable } from "rxjs";
+import { Timestamp } from "../../../google/protobuf/timestamp";
 
 export const protobufPackage = "ticketing.inventory.v1";
 
+export enum SeatStatus {
+  SEAT_STATUS_UNSPECIFIED = 0,
+  SEAT_STATUS_AVAILABLE = 1,
+  SEAT_STATUS_HELD = 2,
+  SEAT_STATUS_SOLD = 3,
+  UNRECOGNIZED = -1,
+}
+
+export enum HoldStatus {
+  HOLD_STATUS_UNSPECIFIED = 0,
+  HOLD_STATUS_ACTIVE = 1,
+  HOLD_STATUS_RELEASED = 2,
+  HOLD_STATUS_CONFIRMED = 3,
+  HOLD_STATUS_EXPIRED = 4,
+  UNRECOGNIZED = -1,
+}
+
+export interface Hold {
+  id: string;
+  eventId: string;
+  userId: string;
+  seatIds: string[];
+  status: HoldStatus;
+  expiresAt: Timestamp | undefined;
+  createdAt: Timestamp | undefined;
+}
+
+export interface SeatAvailability {
+  seatId: string;
+  status: SeatStatus;
+}
+
+export interface SeatsUnavailable {
+  /** Những ghế trong request đã bị người khác giữ hoặc đã bán. */
+  seatIds: string[];
+}
+
+export interface InitEventInventoryRequest {
+  eventId: string;
+  seatIds: string[];
+}
+
+export interface InitEventInventoryResponse {
+  seatCount: number;
+}
+
 export interface HoldSeatsRequest {
   eventId: string;
+  userId: string;
   seatIds: string[];
   idempotencyKey: string;
 }
 
 export interface HoldSeatsResponse {
+  hold?: Hold | undefined;
+  unavailable?: SeatsUnavailable | undefined;
+}
+
+export interface ReleaseHoldRequest {
   holdId: string;
-  expiresAtUnix: number;
-  unavailableSeatIds: string[];
+  /** Hold phải thuộc về user này, ngược lại trả PERMISSION_DENIED. */
+  userId: string;
+}
+
+export interface ReleaseHoldResponse {
+  hold: Hold | undefined;
+}
+
+export interface ConfirmHoldRequest {
+  holdId: string;
+}
+
+export interface ConfirmHoldResponse {
+  hold: Hold | undefined;
+}
+
+export interface GetHoldRequest {
+  holdId: string;
+}
+
+export interface GetHoldResponse {
+  hold: Hold | undefined;
+}
+
+export interface ListSeatAvailabilityRequest {
+  eventId: string;
+}
+
+export interface ListSeatAvailabilityResponse {
+  seats: SeatAvailability[];
 }
 
 export const TICKETING_INVENTORY_V1_PACKAGE_NAME = "ticketing.inventory.v1";
 
+/** InventoryService quản lý trạng thái ghế của từng event: giữ, nhả, xác nhận bán. */
+
 export interface InventoryServiceClient {
+  /** Catalog gọi khi publish event. Idempotent: gọi lại không tạo trùng ghế. */
+
+  initEventInventory(request: InitEventInventoryRequest, metadata?: Metadata): Observable<InitEventInventoryResponse>;
+
+  /** Giữ một nhóm ghế trong TTL. Trùng idempotency_key thì trả lại hold cũ. */
+
   holdSeats(request: HoldSeatsRequest, metadata?: Metadata): Observable<HoldSeatsResponse>;
+
+  /** User hủy giữ chỗ, hoặc Order hủy khi thanh toán lỗi (Phase 2). */
+
+  releaseHold(request: ReleaseHoldRequest, metadata?: Metadata): Observable<ReleaseHoldResponse>;
+
+  /** held -> sold. Chỉ thành công khi hold còn hạn. */
+
+  confirmHold(request: ConfirmHoldRequest, metadata?: Metadata): Observable<ConfirmHoldResponse>;
+
+  getHold(request: GetHoldRequest, metadata?: Metadata): Observable<GetHoldResponse>;
+
+  /** Trạng thái từng ghế, để vẽ sơ đồ ghế. */
+
+  listSeatAvailability(
+    request: ListSeatAvailabilityRequest,
+    metadata?: Metadata,
+  ): Observable<ListSeatAvailabilityResponse>;
 }
 
+/** InventoryService quản lý trạng thái ghế của từng event: giữ, nhả, xác nhận bán. */
+
 export interface InventoryServiceController {
+  /** Catalog gọi khi publish event. Idempotent: gọi lại không tạo trùng ghế. */
+
+  initEventInventory(
+    request: InitEventInventoryRequest,
+    metadata?: Metadata,
+  ): Promise<InitEventInventoryResponse> | Observable<InitEventInventoryResponse> | InitEventInventoryResponse;
+
+  /** Giữ một nhóm ghế trong TTL. Trùng idempotency_key thì trả lại hold cũ. */
+
   holdSeats(
     request: HoldSeatsRequest,
     metadata?: Metadata,
   ): Promise<HoldSeatsResponse> | Observable<HoldSeatsResponse> | HoldSeatsResponse;
+
+  /** User hủy giữ chỗ, hoặc Order hủy khi thanh toán lỗi (Phase 2). */
+
+  releaseHold(
+    request: ReleaseHoldRequest,
+    metadata?: Metadata,
+  ): Promise<ReleaseHoldResponse> | Observable<ReleaseHoldResponse> | ReleaseHoldResponse;
+
+  /** held -> sold. Chỉ thành công khi hold còn hạn. */
+
+  confirmHold(
+    request: ConfirmHoldRequest,
+    metadata?: Metadata,
+  ): Promise<ConfirmHoldResponse> | Observable<ConfirmHoldResponse> | ConfirmHoldResponse;
+
+  getHold(
+    request: GetHoldRequest,
+    metadata?: Metadata,
+  ): Promise<GetHoldResponse> | Observable<GetHoldResponse> | GetHoldResponse;
+
+  /** Trạng thái từng ghế, để vẽ sơ đồ ghế. */
+
+  listSeatAvailability(
+    request: ListSeatAvailabilityRequest,
+    metadata?: Metadata,
+  ): Promise<ListSeatAvailabilityResponse> | Observable<ListSeatAvailabilityResponse> | ListSeatAvailabilityResponse;
 }
 
 export function InventoryServiceControllerMethods() {
   return function (constructor: Function) {
-    const grpcMethods: string[] = ["holdSeats"];
+    const grpcMethods: string[] = [
+      "initEventInventory",
+      "holdSeats",
+      "releaseHold",
+      "confirmHold",
+      "getHold",
+      "listSeatAvailability",
+    ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);
       GrpcMethod("InventoryService", method)(constructor.prototype[method], method, descriptor);
