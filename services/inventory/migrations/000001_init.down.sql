@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS holds;
+DROP TABLE IF EXISTS seat_inventory;
