@@ -3,10 +3,10 @@ COMPOSE := docker compose -f deploy/docker-compose.yml
 INVENTORY_DB_URL ?= postgres://app:app@localhost:5440/inventory_db?sslmode=disable
 INVENTORY_MIGRATIONS := services/inventory/migrations
 
-.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new
+.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new test test-short
 
 up:
-	$(COMPOSE) up -d --wait
+	$(COMPOSE) up -d --build --wait
 
 down:
 	$(COMPOSE) down
@@ -44,3 +44,11 @@ migrate-inventory-new:
 # sqlc chạy qua Docker; dùng cho Phase 1 (mỗi service Go có sqlc.yaml riêng)
 sqlc:
 	docker run --rm -v "$(CURDIR)/services/inventory:/src" -w /src sqlc/sqlc:1.27.0 generate
+
+# Integration test dùng testcontainers (cần Docker đang chạy)
+test:
+	cd services/inventory && go test -race ./...
+
+# Chỉ unit test, bỏ qua test cần container
+test-short:
+	cd services/inventory && go test -short ./...

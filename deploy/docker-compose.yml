@@ -46,6 +46,34 @@ services:
     depends_on:
       redpanda: { condition: service_healthy }
 
+  # Chạy migration một lần rồi thoát; inventory chỉ khởi động khi migration thành công.
+  inventory-migrate:
+    image: migrate/migrate:v4.18.1
+    volumes:
+      - ../services/inventory/migrations:/migrations:ro
+    command: ["-path", "/migrations", "-database", "postgres://app:app@postgres:5432/inventory_db?sslmode=disable", "up"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  inventory:
+    build:
+      context: ..
+      dockerfile: services/inventory/Dockerfile
+    environment:
+      GRPC_ADDR: ":50051"
+      DATABASE_URL: postgres://app:app@postgres:5432/inventory_db?sslmode=disable
+      REDIS_ADDR: redis:6379
+      HOLD_TTL: 5m
+    ports: ["50051:50051"]
+    healthcheck:
+      test: ["CMD", "/inventory", "healthcheck"]
+      interval: 5s
+      retries: 10
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      inventory-migrate: { condition: service_completed_successfully }
+
 volumes:
   pgdata:
   redpanda:

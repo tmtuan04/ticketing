@@ -1,4 +1,4 @@
-# Plan: Hệ thống bán vé Flash Sale (NestJS + Go), Phase 1–3
+# Plan: Hệ thống bán vé Flash Sale (NestJS + Go), Phase 1–4
 
 ## Context
 Mục tiêu là một project microservice thiên về backend để đưa vào CV, giải quyết các bài toán thật: nhiều người tranh cùng một ghế, giữ chỗ có TTL, thanh toán lỗi giữa chừng (Saga/Outbox) và chứng minh **không bán vượt** bằng load test.
@@ -6,7 +6,7 @@ Thư mục `nestjs_golang/` đang trống. Máy đã có Node 22 và Docker 27, 
 
 Các lựa chọn đã chốt: **Redpanda** (tương thích Kafka API), **thư mục đơn giản + Makefile + buf**, **Prisma (Nest) + pgx/sqlc (Go)**.
 
-Phạm vi: Phase 1 (core giữ ghế), Phase 2 (Order Saga + Payment + Outbox), Phase 3 (k6 + kiểm tra bất biến). Chưa làm Observability, Waiting Room, Notification.
+Phạm vi: Phase 1 (core giữ ghế), Phase 2 (Order Saga + Payment + Outbox), Phase 3 (k6 + kiểm tra bất biến), Phase 4 (triển khai lên Kubernetes, chạy nhiều replica và rolling update mà vẫn giữ bất biến). Chưa làm Observability, Waiting Room, Notification.
 
 ---
 
@@ -27,7 +27,8 @@ nestjs_golang/
 │   └── order/      (Go)       Phase 2: tạo đơn, điều phối Saga, outbox relay
 ├── deploy/
 │   ├── docker-compose.yml     postgres, redis, redpanda, redpanda-console, các service
-│   └── postgres/init.sql      tạo DB riêng: auth_db, catalog_db, inventory_db, order_db, payment_db
+│   ├── postgres/init.sql      tạo DB riêng: auth_db, catalog_db, inventory_db, order_db, payment_db
+│   └── k8s/                   Phase 4: kind config, Kustomize base/overlays, Helm values cho hạ tầng
 ├── loadtest/k6/               Phase 3
 ├── go.work                    gom gen/go, services/inventory, services/order
 └── Makefile                   proto, sqlc, migrate, up/down, test, loadtest
@@ -167,11 +168,71 @@ Viết thêm `README.md` có sơ đồ kiến trúc và sequence diagram của S
 
 ---
 
+## Phase 4: Triển khai trên Kubernetes (≈1–1.5 tuần)
+
+Mục tiêu: chạy toàn bộ hệ thống trên cluster local, **mỗi service ≥ 2 replica**, và chứng minh các bất biến của Phase 3 vẫn đúng khi pod bị kill hoặc đang rolling update giữa lúc tải cao. Compose vẫn giữ để dev hằng ngày; K8s là môi trường "giống production".
+
+### 4.0 Công cụ
+- **kind** (chạy trên Docker có sẵn, dựng 1 control-plane + 2 worker để test phân tán pod). `kubectl` đã có (v1.30, kèm Kustomize).
+- Cài thêm `kind`, `helm`. Tuỳ chọn: `k9s` để quan sát, `tilt` hoặc `skaffold` cho vòng lặp dev.
+- `ingress-nginx` (bản cho kind) và `metrics-server` (bắt buộc cho HPA).
+
+### 4.1 Cấu trúc manifest
+```
+deploy/k8s/
+├── kind-config.yaml            1 control-plane + 2 worker, map port 80/443 ra host cho ingress
+├── infra/
+│   ├── postgres/               StatefulSet + PVC + Service, init.sql nạp qua configMapGenerator
+│   ├── redis/                  StatefulSet 1 replica (chỉ là cache/lọc nhanh, mất dữ liệu vẫn đúng)
+│   └── redpanda-values.yaml    Helm chart chính chủ của Redpanda, 1 broker, giới hạn RAM cho máy dev
+├── base/                       Kustomize: mỗi service có deployment, service, configmap, hpa, pdb
+│   ├── gateway/ catalog/ payment/ inventory/ order/
+│   ├── jobs/                   migrate cho từng DB, tạo topic Redpanda
+│   └── ingress.yaml
+└── overlays/
+    ├── dev/                    1 replica, log debug, resource nhỏ
+    └── loadtest/               ≥ 2–3 replica, rate limit nới, resource cố định để kết quả tái lập được
+```
+- **Hạ tầng:** Postgres và Redis tự viết StatefulSet cho đơn giản và dễ hiểu; Redpanda dùng Helm chart chính chủ vì cấu hình advertised address trong K8s khá rắc rối. (Nâng cấp tuỳ chọn: thay Postgres bằng operator CloudNativePG.)
+- **Image:** tag theo git SHA, build rồi `kind load docker-image` (không cần registry). Không dùng tag `latest` để rollout luôn có thay đổi thật.
+
+### 4.2 Điều chỉnh code cho chạy trên K8s
+Phần lớn đã có sẵn (inventory có gRPC health server, `hs.Shutdown()` rồi `GracefulStop()` khi nhận SIGTERM, log JSON ra stdout). Cần bổ sung:
+- **Migration thành Job:** Go nhúng migrations bằng `embed` + `golang-migrate` source `iofs`, thêm subcommand `inventory migrate` (cùng image nên schema luôn khớp code). Nest chạy `prisma migrate deploy` trong Job. golang-migrate có advisory lock nên chạy trùng cũng an toàn.
+- **Drain khi tắt pod:** sau khi chuyển health sang `NOT_SERVING` cần chờ vài giây cho endpoint bị gỡ khỏi Service rồi mới `GracefulStop`. Image distroless không có `sleep`, nên dùng `lifecycle.preStop.sleep` native (K8s ≥ 1.30) hoặc thêm `SHUTDOWN_DRAIN_DELAY` trong app. `terminationGracePeriodSeconds` phải lớn hơn tổng drain + shutdown timeout.
+- **Nest:** `app.enableShutdownHooks()`, endpoint health bằng `@nestjs/terminus` (HTTP cho gateway/payment, gRPC health cho catalog). Consumer kafkajs phải `disconnect()` khi tắt để rebalance nhanh.
+- **Gateway sau ingress:** bật `trust proxy` để rate limit theo IP đọc đúng `X-Forwarded-For`, không bị gộp hết về IP của ingress controller.
+
+### 4.3 Những điểm cần xử lý riêng cho K8s
+- **Cân bằng tải gRPC:** gRPC giữ kết nối HTTP/2 lâu dài, nên ClusterIP Service chỉ cân bằng ở mức kết nối và mọi request dồn vào 1 pod. Cách xử lý: Service **headless** + client tự cân bằng (`dns:///inventory-headless:50051` với `round_robin` ở Go; `grpc.service_config` ở grpc-js), kèm `MaxConnectionAge` phía server để client resolve lại khi scale. Đo trước/sau để đưa vào README.
+- **Probe:** dùng gRPC probe native (`grpc: {port: 50051}`) cho service Go, bỏ subcommand `healthcheck` dùng cho compose. Tách `readinessProbe` (phụ thuộc DB) và `livenessProbe` (chỉ kiểm tra process còn sống), tránh restart dây chuyền khi Postgres chậm. Thêm `startupProbe` cho Nest.
+- **Nhiều replica có an toàn không:** reaper, outbox relay và timeout worker đều dùng `FOR UPDATE SKIP LOCKED` nên chạy song song trên nhiều pod không xử lý trùng. Consumer Redpanda dùng consumer group, số partition của topic phải ≥ số replica tối đa.
+- **Config & Secret:** ConfigMap cho tham số (HOLD_TTL, REAPER_INTERVAL…), Secret cho DB password, JWT secret, HMAC webhook secret. Secret sinh bằng `secretGenerator` từ file `.env.k8s` đã gitignore, không commit lên repo.
+- **Sẵn sàng cao:** `PodDisruptionBudget` (`minAvailable: 1`), `topologySpreadConstraints` để replica nằm trên các node khác nhau, `resources.requests/limits` cho mọi container.
+- **Autoscaling:** HPA theo CPU cho gateway và inventory. Tuỳ chọn: KEDA scale payment/order theo consumer lag của Redpanda.
+- **Mạng:** Ingress chỉ mở gateway (và `/mock-gateway`, `/payments/webhook` của payment). NetworkPolicy: inventory chỉ nhận từ gateway/catalog/order, DB chỉ nhận từ các service (kind ≥ 0.24 có hỗ trợ NetworkPolicy, nếu không thì cài Calico).
+
+### 4.4 Makefile
+`k8s-up` (tạo cluster kind + ingress + metrics-server), `k8s-images` (build + kind load), `k8s-infra` (Postgres/Redis/Redpanda), `k8s-deploy` (`kubectl apply -k overlays/<env>` rồi `kubectl wait` các Job migrate), `k8s-down`, `k8s-loadtest`.
+
+### 4.5 Kiểm thử Phase 4
+- Từ cluster trống, `make k8s-up k8s-images k8s-infra k8s-deploy` → mọi pod `Ready`, Job migrate `Complete`.
+- Postman collection chạy qua ingress (`postman collection run` với environment K8s) → PASS.
+- **k6 chạy trong cluster** (Job, hoặc k6-operator) để không bị nghẽn ở port-forward, sau đó chạy `verify.sql` của Phase 3.
+- **Rolling update giữa lúc tải:** `kubectl rollout restart deploy/inventory` khi `contention.js` đang chạy → bất biến vẫn PASS, tỉ lệ lỗi 5xx gần 0 (nhờ readiness + drain).
+- **Chaos:** `kubectl delete pod` payment/order giữa Saga → pod mới lên và Saga tiếp tục. Kill pod Redis → hold vẫn đúng (chỉ chậm hơn vì đi thẳng Postgres).
+- Scale inventory lên 3 replica → tải chia đều giữa các pod (kiểm tra qua log hoặc số request mỗi pod), chứng minh client-side load balancing hoạt động.
+
+**Hoàn thành Phase 4 khi:** chạy được các kịch bản trên và `docs/k8s.md` ghi lại kiến trúc triển khai, lệnh dựng cluster và kết quả kiểu: *"Rolling update inventory dưới tải 5.000 VU: 0 vé bán vượt, lỗi < X%"*.
+
+---
+
 ## Verification tổng
 - `make up && make migrate && make seed` → toàn bộ stack healthy.
 - `make test`: unit + integration bằng testcontainers cho Go, jest e2e cho Nest.
 - Bộ Postman collection (có Postman CLI) chạy luồng end-to-end: `postman collection run`.
 - `make loadtest && make verify` → mọi bất biến trong 3.3 đều PASS.
+- Trên K8s: `make k8s-up k8s-images k8s-infra k8s-deploy && make k8s-loadtest` → bất biến 3.3 vẫn PASS, kể cả khi rolling update và kill pod (mục 4.5).
 
 ## Thứ tự thực hiện (milestone)
 1. M0: repo, compose, proto/buf.
@@ -182,3 +243,5 @@ Viết thêm `README.md` có sơ đồ kiến trúc và sequence diagram của S
 6. M5: Payment + webhook.
 7. M6: Saga nhánh lỗi, DLQ, chaos.
 8. M7: k6 + verify + docs.
+9. M8: K8s: cluster kind + hạ tầng + manifest, migration Job, probe/drain, gRPC load balancing.
+10. M9: K8s: HPA/PDB/NetworkPolicy, k6 trong cluster, rolling update và chaos dưới tải, `docs/k8s.md`.
