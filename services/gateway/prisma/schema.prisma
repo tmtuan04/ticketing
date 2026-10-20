@@ -1,0 +1,46 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  user
+  admin
+
+  @@map("role")
+}
+
+model User {
+  id            String         @id @default(uuid()) @db.Uuid
+  // Luôn lưu dạng chữ thường để unique không phân biệt hoa/thường.
+  email         String         @unique
+  passwordHash  String         @map("password_hash")
+  role          Role           @default(user)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+// Refresh token dạng opaque, chỉ lưu SHA-256. Mỗi lần refresh sinh token mới cùng family và
+// thu hồi token cũ; dùng lại token đã thu hồi thì thu hồi cả family (phát hiện token bị đánh cắp).
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  familyId  String    @map("family_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@index([userId])
+  @@map("refresh_tokens")
+}

@@ -41,7 +41,7 @@ nestjs_golang/
 
 **Thư viện:**
 - Go: `grpc-go`, `pgx/v5`, `sqlc`, `go-redis/v9`, `franz-go`, `golang-migrate`, `log/slog`, `testcontainers-go`.
-- Nest: `@nestjs/microservices` (gRPC transport), `@grpc/grpc-js`, `ts-proto`, `prisma`, `@nestjs/jwt` + passport, `@nestjs/throttler` (Redis storage), `kafkajs`, `class-validator`.
+- Nest (**Nest 12, Node 24** theo `.nvmrc`; Nest CLI 12 không chạy trên Node 22.12): `@nestjs/microservices` (gRPC transport), `@grpc/grpc-js`, `ts-proto`, Prisma 7 (`@prisma/adapter-pg`), `@nestjs/jwt` (guard tự viết, không dùng passport), `@nestjs/throttler` (Redis storage tự viết bằng Lua), `kafkajs`, `class-validator`. Các service Nest là npm workspaces ở root.
 
 ---
 
@@ -58,6 +58,8 @@ nestjs_golang/
 - `JwtAuthGuard` toàn cục, decorator `@Roles('admin')`.
 - `@nestjs/throttler` dùng Redis storage: rate limit theo user và IP, endpoint giữ ghế có giới hạn chặt hơn.
 - Các gRPC client tới catalog và inventory. Exception filter map gRPC status sang HTTP (ví dụ `ALREADY_EXISTS`/`FAILED_PRECONDITION` → 409).
+
+**Trạng thái M1 (đã xong):** register/login/refresh (rotation + phát hiện dùng lại token → thu hồi cả family)/logout/me, mật khẩu hash bằng scrypt, admin tạo từ `ADMIN_EMAIL`/`ADMIN_PASSWORD`. Rate limit fail-open khi Redis sập, bucket riêng cho auth (theo IP) và hold (theo user). Route giữ ghế: `GET /events/:id/seats`, `POST /events/:id/holds` (bắt buộc `Idempotency-Key`), `GET|DELETE /holds/:id`. gRPC client tới catalog để sang M2. Test: unit + e2e (testcontainers Postgres/Redis + InventoryService giả in-process).
 
 ### 1.2 Catalog (NestJS, `catalog_db`)
 - Bảng: `events`, `venues`, `seats` (section/row/number), `ticket_tiers` (giá).

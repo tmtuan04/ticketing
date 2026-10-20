@@ -6,3 +6,5 @@ node_modules
 **/*.log
 **/.env
 loadtest
+**/src/generated
+**/*.tsbuildinfo

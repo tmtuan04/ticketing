@@ -9,3 +9,6 @@ bin/
 go.work.sum
 
 /main.go
+
+# Tài liệu học tập cá nhân, không commit
+docs/

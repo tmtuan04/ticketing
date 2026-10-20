@@ -74,6 +74,40 @@ services:
       redis: { condition: service_healthy }
       inventory-migrate: { condition: service_completed_successfully }
 
+  gateway-migrate:
+    build:
+      context: ..
+      dockerfile: services/gateway/Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/auth_db
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: services/gateway/Dockerfile
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgresql://app:app@postgres:5432/auth_db
+      REDIS_URL: redis://redis:6379
+      INVENTORY_GRPC_URL: inventory:50051
+      # chỉ dùng cho môi trường dev
+      JWT_ACCESS_SECRET: dev-only-secret-change-me-0123456789abcdef
+      ADMIN_EMAIL: admin@ticketing.local
+      ADMIN_PASSWORD: admin12345
+    ports: ["3000:3000"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
+      interval: 5s
+      retries: 10
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      inventory: { condition: service_healthy }
+      gateway-migrate: { condition: service_completed_successfully }
+
 volumes:
   pgdata:
   redpanda:
