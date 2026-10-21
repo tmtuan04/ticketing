@@ -3,6 +3,7 @@ import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import type { Redis } from 'ioredis';
 import { AuthModule } from './auth/auth.module';
+import { CatalogModule } from './catalog/catalog.module';
 import { JwtAuthGuard, RolesGuard } from './auth/guards';
 import { AppExceptionFilter } from './common/grpc-errors';
 import { APP_CONFIG, AppConfigModule, type AppConfig } from './config';
@@ -31,6 +32,7 @@ export class AppModule {
         }),
         AuthModule,
         InventoryModule,
+        CatalogModule,
       ],
       controllers: [HealthController],
       providers: [

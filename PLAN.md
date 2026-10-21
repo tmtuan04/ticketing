@@ -67,6 +67,8 @@ nestjs_golang/
 - gRPC: `GetEvent`, `ListSeats`.
 - Khi publish, gọi `inventory.InitEventInventory(event_id, seat_ids[])` (idempotent). Phase 2 có thể chuyển sang outbox event.
 
+**Trạng thái M2 (đã xong):** service Nest chỉ chạy gRPC (port 50052) kèm `grpc.health.v1`. Prisma lưu `venues`, `events` (draft|published), `ticket_tiers` (giá BigInt, 1 loại tiền/event), `seats` (sinh bằng `generate_series`, idempotent theo `(event, section, row, number)`, giới hạn `MAX_SEATS_PER_EVENT`). `ListEvents` phân trang keyset `(starts_at, id)`, thêm field `include_drafts` vào proto. Publish khóa hàng event (`FOR UPDATE`), gọi InitEventInventory rồi mới đổi status: inventory lỗi/timeout thì event vẫn draft, gọi lại an toàn; sau publish sơ đồ ghế bị khóa (FAILED_PRECONDITION → 409). Gateway: public `GET /events`, `GET /events/:id`, `GET /events/:id/seats` (ghép sơ đồ ghế của catalog với trạng thái từ inventory, event draft trả 404); admin `POST /admin/venues`, `POST|GET /admin/events`, `GET /admin/events/:id`, `POST /admin/events/:id/seats`, `POST /admin/events/:id/publish`. Test: unit validation + e2e catalog (testcontainers Postgres + inventory giả, gồm cả case GenerateSeats chạy song song với publish) + e2e gateway (catalog/inventory giả).
+
 ### 1.3 Inventory (Go, `inventory_db` + Redis), trọng tâm của project
 **Nguồn dữ liệu gốc là Postgres:**
 ```sql

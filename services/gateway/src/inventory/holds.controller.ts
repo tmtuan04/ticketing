@@ -11,10 +11,11 @@ import {
 } from '@nestjs/common';
 import type { Metadata } from '@grpc/grpc-js';
 import { ArrayMaxSize, ArrayNotEmpty, ArrayUnique, IsArray, IsUUID } from 'class-validator';
-import { CurrentUser, GrpcMeta, IdempotencyKey, Public, RateLimit } from '../common/decorators';
+import { CurrentUser, GrpcMeta, IdempotencyKey, RateLimit } from '../common/decorators';
+import { toIso } from '../common/proto';
 import type { AuthUser } from '../common/request';
 import { InventoryClient } from './inventory.client';
-import { HoldStatus, SeatStatus, type Hold, type Timestamp } from './inventory.pb';
+import { HoldStatus, type Hold } from './inventory.pb';
 
 export class HoldSeatsDto {
   // Giới hạn số ghế mỗi hold (MAX_SEATS_PER_HOLD) do inventory kiểm tra; ở đây chỉ chặn payload quá lớn.
@@ -31,16 +32,6 @@ const uuid = new ParseUUIDPipe();
 @Controller()
 export class HoldsController {
   constructor(private readonly inventory: InventoryClient) {}
-
-  @Public()
-  @Get('events/:eventId/seats')
-  async listSeats(@Param('eventId', uuid) eventId: string, @GrpcMeta() md: Metadata) {
-    const res = await this.inventory.listSeatAvailability({ eventId }, md);
-    return {
-      eventId,
-      seats: res.seats.map((s) => ({ seatId: s.seatId, status: SEAT_STATUS[s.status] ?? 'unknown' })),
-    };
-  }
 
   /** Giữ ghế. Gửi lại cùng Idempotency-Key trả về hold cũ thay vì tạo hold mới. */
   @RateLimit('hold')
@@ -97,12 +88,6 @@ const HOLD_STATUS: Partial<Record<HoldStatus, string>> = {
   [HoldStatus.HOLD_STATUS_EXPIRED]: 'expired',
 };
 
-const SEAT_STATUS: Partial<Record<SeatStatus, string>> = {
-  [SeatStatus.SEAT_STATUS_AVAILABLE]: 'available',
-  [SeatStatus.SEAT_STATUS_HELD]: 'held',
-  [SeatStatus.SEAT_STATUS_SOLD]: 'sold',
-};
-
 function toHoldView(h: Hold) {
   return {
     id: h.id,
@@ -115,8 +100,3 @@ function toHoldView(h: Hold) {
   };
 }
 
-/** Timestamp từ proto-loader có seconds dạng string (longs: String). */
-function toIso(ts: Timestamp | undefined): string | null {
-  if (!ts) return null;
-  return new Date(Number(ts.seconds) * 1000 + Math.floor(ts.nanos / 1e6)).toISOString();
-}

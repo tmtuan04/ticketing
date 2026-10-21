@@ -34,5 +34,6 @@ import { TICKETING_INVENTORY_V1_PACKAGE_NAME } from './inventory.pb';
   ],
   controllers: [HoldsController],
   providers: [InventoryClient],
+  exports: [InventoryClient],
 })
 export class InventoryModule {}

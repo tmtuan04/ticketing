@@ -3,8 +3,9 @@ COMPOSE := docker compose -f deploy/docker-compose.yml
 INVENTORY_DB_URL ?= postgres://app:app@localhost:5440/inventory_db?sslmode=disable
 INVENTORY_MIGRATIONS := services/inventory/migrations
 GATEWAY_DB_URL ?= postgresql://app:app@localhost:5440/auth_db
+CATALOG_DB_URL ?= postgresql://app:app@localhost:5440/catalog_db
 
-.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new migrate-gateway test test-short test-inventory test-gateway
+.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new migrate-gateway migrate-catalog test test-short test-inventory test-gateway test-catalog
 
 up:
 	$(COMPOSE) up -d --build --wait
@@ -29,7 +30,7 @@ proto: proto-lint
 	cd gen/go && go mod tidy
 
 # Chạy migration của mọi service (compose cũng tự chạy khi `make up`)
-migrate: migrate-inventory migrate-gateway
+migrate: migrate-inventory migrate-gateway migrate-catalog
 
 migrate-inventory:
 	migrate -path $(INVENTORY_MIGRATIONS) -database "$(INVENTORY_DB_URL)" up
@@ -46,12 +47,16 @@ migrate-gateway: export DATABASE_URL = $(GATEWAY_DB_URL)
 migrate-gateway:
 	cd services/gateway && npx prisma migrate deploy
 
+migrate-catalog: export DATABASE_URL = $(CATALOG_DB_URL)
+migrate-catalog:
+	cd services/catalog && npx prisma migrate deploy
+
 # sqlc chạy qua Docker; dùng cho Phase 1 (mỗi service Go có sqlc.yaml riêng)
 sqlc:
 	docker run --rm -v "$(CURDIR)/services/inventory:/src" -w /src sqlc/sqlc:1.27.0 generate
 
-# Integration/e2e test dùng testcontainers (cần Docker đang chạy). Gateway cần Node 24 (.nvmrc).
-test: test-inventory test-gateway
+# Integration/e2e test dùng testcontainers (cần Docker đang chạy). Service Nest cần Node 24 (.nvmrc).
+test: test-inventory test-gateway test-catalog
 
 test-inventory:
 	cd services/inventory && go test -race ./...
@@ -59,7 +64,11 @@ test-inventory:
 test-gateway:
 	cd services/gateway && npx prisma generate && npm test && npm run test:e2e
 
+test-catalog:
+	cd services/catalog && npx prisma generate && npm test && npm run test:e2e
+
 # Chỉ unit test, bỏ qua test cần container
 test-short:
 	cd services/inventory && go test -short ./...
 	cd services/gateway && npm test
+	cd services/catalog && npm test

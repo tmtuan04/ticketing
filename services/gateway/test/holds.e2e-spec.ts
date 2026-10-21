@@ -54,23 +54,6 @@ describe('Holds (e2e, fake inventory)', () => {
     await inventory.stop();
   });
 
-  it('lists seat availability without authentication', async () => {
-    inventory.handlers.ListSeatAvailability = () => ({
-      seats: [
-        { seatId: SEAT_A, status: 1 },
-        { seatId: SEAT_B, status: 3 },
-      ],
-    });
-    const res = await http().get(`/events/${EVENT}/seats`).expect(200);
-    expect(res.body).toEqual({
-      eventId: EVENT,
-      seats: [
-        { seatId: SEAT_A, status: 'available' },
-        { seatId: SEAT_B, status: 'sold' },
-      ],
-    });
-  });
-
   it('holds seats for the authenticated user and propagates request metadata', async () => {
     inventory.handlers.HoldSeats = (req) => ({ hold: pbHold(req.userId) });
 

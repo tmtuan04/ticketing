@@ -4,7 +4,8 @@
   "private": true,
   "description": "Flash sale ticketing (NestJS + Go)",
   "workspaces": [
-    "services/gateway"
+    "services/gateway",
+    "services/catalog"
   ],
   "devDependencies": {
     "ts-proto": "^2.15.0"

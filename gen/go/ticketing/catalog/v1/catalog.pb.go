@@ -458,7 +458,8 @@ func (x *GetEventResponse) GetEvent() *Event {
 type ListEventsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PageSize      int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken     string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"` // rỗng = trang đầu
+	PageToken     string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`              // rỗng = trang đầu
+	IncludeDrafts bool                   `protobuf:"varint,3,opt,name=include_drafts,json=includeDrafts,proto3" json:"include_drafts,omitempty"` // false = chỉ event đã publish (API công khai)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -505,6 +506,13 @@ func (x *ListEventsRequest) GetPageToken() string {
 		return x.PageToken
 	}
 	return ""
+}
+
+func (x *ListEventsRequest) GetIncludeDrafts() bool {
+	if x != nil {
+		return x.IncludeDrafts
+	}
+	return false
 }
 
 type ListEventsResponse struct {
@@ -1207,11 +1215,12 @@ const file_ticketing_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x0fGetEventRequest\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\"E\n" +
 	"\x10GetEventResponse\x121\n" +
-	"\x05event\x18\x01 \x01(\v2\x1b.ticketing.catalog.v1.EventR\x05event\"O\n" +
+	"\x05event\x18\x01 \x01(\v2\x1b.ticketing.catalog.v1.EventR\x05event\"v\n" +
 	"\x11ListEventsRequest\x12\x1b\n" +
 	"\tpage_size\x18\x01 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x02 \x01(\tR\tpageToken\"q\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\x12%\n" +
+	"\x0einclude_drafts\x18\x03 \x01(\bR\rincludeDrafts\"q\n" +
 	"\x12ListEventsResponse\x123\n" +
 	"\x06events\x18\x01 \x03(\v2\x1b.ticketing.catalog.v1.EventR\x06events\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"-\n" +

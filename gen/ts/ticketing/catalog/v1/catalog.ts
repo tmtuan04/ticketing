@@ -65,6 +65,8 @@ export interface ListEventsRequest {
   pageSize: number;
   /** rỗng = trang đầu */
   pageToken: string;
+  /** false = chỉ event đã publish (API công khai) */
+  includeDrafts: boolean;
 }
 
 export interface ListEventsResponse {

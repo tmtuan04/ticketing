@@ -74,6 +74,34 @@ services:
       redis: { condition: service_healthy }
       inventory-migrate: { condition: service_completed_successfully }
 
+  catalog-migrate:
+    build:
+      context: ..
+      dockerfile: services/catalog/Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/catalog_db
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  catalog:
+    build:
+      context: ..
+      dockerfile: services/catalog/Dockerfile
+    environment:
+      GRPC_PORT: "50052"
+      DATABASE_URL: postgresql://app:app@postgres:5432/catalog_db
+      INVENTORY_GRPC_URL: inventory:50051
+    ports: ["50052:50052"]
+    healthcheck:
+      test: ["CMD", "node", "dist/services/catalog/src/healthcheck.js"]
+      interval: 5s
+      retries: 10
+    depends_on:
+      postgres: { condition: service_healthy }
+      inventory: { condition: service_healthy }
+      catalog-migrate: { condition: service_completed_successfully }
+
   gateway-migrate:
     build:
       context: ..
@@ -93,6 +121,7 @@ services:
       DATABASE_URL: postgresql://app:app@postgres:5432/auth_db
       REDIS_URL: redis://redis:6379
       INVENTORY_GRPC_URL: inventory:50051
+      CATALOG_GRPC_URL: catalog:50052
       # chỉ dùng cho môi trường dev
       JWT_ACCESS_SECRET: dev-only-secret-change-me-0123456789abcdef
       ADMIN_EMAIL: admin@ticketing.local
@@ -106,6 +135,7 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       inventory: { condition: service_healthy }
+      catalog: { condition: service_healthy }
       gateway-migrate: { condition: service_completed_successfully }
 
 volumes:

@@ -11,6 +11,7 @@ export interface AppConfig {
   databaseUrl: string;
   redisUrl: string;
   inventoryGrpcUrl: string;
+  catalogGrpcUrl: string;
   grpcTimeoutMs: number;
   protoDir: string;
   /** giá trị cho express `trust proxy`: false, số hop, hoặc danh sách subnet */
@@ -85,6 +86,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseUrl: str('DATABASE_URL', 'postgresql://app:app@localhost:5440/auth_db'),
     redisUrl: str('REDIS_URL', 'redis://localhost:6379'),
     inventoryGrpcUrl: str('INVENTORY_GRPC_URL', 'localhost:50051'),
+    catalogGrpcUrl: str('CATALOG_GRPC_URL', 'localhost:50052'),
     grpcTimeoutMs: dur('GRPC_TIMEOUT', '3s'),
     protoDir: resolve(str('PROTO_DIR', '../../proto')),
     trustProxy: parseTrustProxy(str('TRUST_PROXY', 'false')),

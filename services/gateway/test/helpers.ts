@@ -73,38 +73,51 @@ export interface RecordedCall {
   metadata: Record<string, string>;
 }
 
+/** InventoryService giả, xem startFakeGrpc. */
+export const startFakeInventory = () =>
+  startFakeGrpc('ticketing/inventory/v1/inventory.proto', 'ticketing.inventory.v1', ['InventoryService']);
+
+/** CatalogService + CatalogAdminService giả trên cùng một server, xem startFakeGrpc. */
+export const startFakeCatalog = () =>
+  startFakeGrpc('ticketing/catalog/v1/catalog.proto', 'ticketing.catalog.v1', [
+    'CatalogService',
+    'CatalogAdminService',
+  ]);
+
 /**
- * InventoryService giả chạy in-process: mỗi test gán handler cho RPC cần dùng.
+ * gRPC server giả chạy in-process: mỗi test gán handler cho RPC cần dùng (theo tên method, ví dụ HoldSeats).
  * Handler throw `grpcError(...)` để trả gRPC status.
  */
-export async function startFakeInventory() {
-  const def = loadSync('ticketing/inventory/v1/inventory.proto', {
+async function startFakeGrpc(protoPath: string, pkgName: string, serviceNames: string[]) {
+  const def = loadSync(protoPath, {
     includeDirs: [PROTO_DIR],
     keepCase: false,
     longs: String,
     defaults: true,
     arrays: true,
   });
-  const pkg = loadPackageDefinition(def) as any;
-  const service = pkg.ticketing.inventory.v1.InventoryService.service;
+  let pkg = loadPackageDefinition(def) as any;
+  for (const part of pkgName.split('.')) pkg = pkg[part];
   const handlers: Record<string, Handler> = {};
   const calls: RecordedCall[] = [];
-
-  const impl: Record<string, (call: any, cb: (err: any, res?: any) => void) => void> = {};
-  for (const name of Object.keys(service)) {
-    const method = service[name].originalName ?? name;
-    impl[name] = (call, cb) => {
-      calls.push({ method: name, request: call.request, metadata: flatten(call.metadata) });
-      const h = handlers[name];
-      if (!h) return cb({ code: status.UNIMPLEMENTED, details: `${method} not stubbed` });
-      Promise.resolve()
-        .then(() => h(call.request))
-        .then((res) => cb(null, res), (err) => cb(err));
-    };
-  }
-
   const server = new Server();
-  server.addService(service, impl);
+
+  for (const serviceName of serviceNames) {
+    const service = pkg[serviceName].service;
+    const impl: Record<string, (call: any, cb: (err: any, res?: any) => void) => void> = {};
+    for (const name of Object.keys(service)) {
+      const method = service[name].originalName ?? name;
+      impl[name] = (call, cb) => {
+        calls.push({ method: name, request: call.request, metadata: flatten(call.metadata) });
+        const h = handlers[name];
+        if (!h) return cb({ code: status.UNIMPLEMENTED, details: `${method} not stubbed` });
+        Promise.resolve()
+          .then(() => h(call.request))
+          .then((res) => cb(null, res), (err) => cb(err));
+      };
+    }
+    server.addService(service, impl);
+  }
   const port = await new Promise<number>((resolve, reject) =>
     server.bindAsync('127.0.0.1:0', ServerCredentials.createInsecure(), (err, p) =>
       err ? reject(err) : resolve(p),

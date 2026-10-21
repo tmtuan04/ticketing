@@ -69,6 +69,7 @@ message GetEventResponse {
 message ListEventsRequest {
   int32 page_size = 1;
   string page_token = 2; // rỗng = trang đầu
+  bool include_drafts = 3; // false = chỉ event đã publish (API công khai)
 }
 
 message ListEventsResponse {
