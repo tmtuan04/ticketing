@@ -5,7 +5,7 @@ INVENTORY_MIGRATIONS := services/inventory/migrations
 GATEWAY_DB_URL ?= postgresql://app:app@localhost:5440/auth_db
 CATALOG_DB_URL ?= postgresql://app:app@localhost:5440/catalog_db
 
-.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new migrate-gateway migrate-catalog test test-short test-inventory test-gateway test-catalog
+.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new migrate-gateway migrate-catalog test test-short test-inventory test-gateway test-catalog e2e
 
 up:
 	$(COMPOSE) up -d --build --wait
@@ -72,3 +72,8 @@ test-short:
 	cd services/inventory && go test -short ./...
 	cd services/gateway && npm test
 	cd services/catalog && npm test
+
+# Luồng end-to-end Phase 1 qua gateway trên stack đang chạy (`make up`). Folder Expiry chỉ chạy
+# khi stack dựng với HOLD_TTL ngắn, vd `HOLD_TTL=15s make up`.
+e2e:
+	postman collection run postman/ticketing-phase1.postman_collection.json
