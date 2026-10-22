@@ -24,6 +24,13 @@ type Querier interface {
 	// UPDATE ... FROM nối bảng holds với "due" để chỉ cập nhật đúng các dòng đã chọn.
 	// Dùng index một phần holds_expires_at_idx (chỉ chứa hold active) nên quét rất nhanh.
 	ExpireDueHolds(ctx context.Context, batchSize int32) ([]ExpireDueHoldsRow, error)
+	// Kéo dài hạn của hold còn active và chưa hết hạn (Order gọi khi tạo đơn).
+	// GREATEST: chỉ kéo dài, không rút ngắn; gọi lại với hạn nhỏ hơn thì giữ nguyên hạn cũ.
+	// Không có dòng trả về thì service đọc lại hold để biết lý do (giống MarkHold*).
+	ExtendHold(ctx context.Context, arg ExtendHoldParams) (Hold, error)
+	// Đồng bộ held_until của ghế với hạn mới của hold (ExtendHold), để ghế không bị coi là quá hạn
+	// trước hold. Không đổi trạng thái nên không tăng version.
+	ExtendSeatsByHold(ctx context.Context, arg ExtendSeatsByHoldParams) (int64, error)
 	// Hold active của user trong event (tối đa 1, do unique index đảm bảo). Nếu đã quá hạn mà
 	// reaper chưa quét thì service expire nó trước khi tạo hold mới.
 	// FOR UPDATE khóa dòng này tới hết transaction, để không transaction khác sửa nó cùng lúc.

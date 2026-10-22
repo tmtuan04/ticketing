@@ -20,14 +20,15 @@ import (
 // khác dùng được. Chữ thường (env, duration...) là unexported (private trong package).
 // Go không có từ khóa public/private, chỉ dựa vào chữ cái đầu.
 type Config struct {
-	GRPCAddr        string        // địa chỉ lắng nghe gRPC, vd ":50051"
-	DatabaseURL     string        // connection string Postgres
-	RedisAddr       string        // "host:port" của Redis
-	HoldTTL         time.Duration // thời gian giữ ghế trước khi tự hết hạn
-	MaxSeatsPerHold int           // số ghế tối đa trong một lần giữ
-	ReaperInterval  time.Duration // chu kỳ reaper quét hold hết hạn
-	ReaperBatchSize int32         // số hold tối đa reaper xử lý trong một transaction
-	LogLevel        slog.Level    // debug | info | warn | error
+	GRPCAddr         string        // địa chỉ lắng nghe gRPC, vd ":50051"
+	DatabaseURL      string        // connection string Postgres
+	RedisAddr        string        // "host:port" của Redis
+	HoldTTL          time.Duration // thời gian giữ ghế trước khi tự hết hạn
+	MaxSeatsPerHold  int           // số ghế tối đa trong một lần giữ
+	MaxHoldExtension time.Duration // ttl tối đa cho một lần ExtendHold (Order gia hạn khi tạo đơn)
+	ReaperInterval   time.Duration // chu kỳ reaper quét hold hết hạn
+	ReaperBatchSize  int32         // số hold tối đa reaper xử lý trong một transaction
+	LogLevel         slog.Level    // debug | info | warn | error
 }
 
 // Load đọc config từ env. Gom TẤT CẢ lỗi lại rồi trả một lần, để người chạy thấy hết các biến
@@ -46,6 +47,7 @@ func Load() (Config, error) {
 	var errs []error
 	c.HoldTTL = duration("HOLD_TTL", 5*time.Minute, &errs)
 	c.MaxSeatsPerHold = integer("MAX_SEATS_PER_HOLD", 8, &errs)
+	c.MaxHoldExtension = duration("MAX_HOLD_EXTENSION", 15*time.Minute, &errs)
 	c.ReaperInterval = duration("REAPER_INTERVAL", 5*time.Second, &errs)
 	// [Go] Go không tự ép kiểu số; int -> int32 phải viết rõ int32(...).
 	c.ReaperBatchSize = int32(integer("REAPER_BATCH_SIZE", 500, &errs))

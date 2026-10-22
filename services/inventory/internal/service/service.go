@@ -6,7 +6,7 @@
 // Vòng đời của một hold (lượt giữ chỗ):
 //
 //	           ReleaseHold
-//	active ─────────────────> released
+//	active ─────────────────> released    (ExtendHold chỉ kéo dài hạn, vẫn active)
 //	  │  │     ConfirmHold
 //	  │  └──────────────────> confirmed   (ghế: held -> sold)
 //	  │   hết hạn (reaper / tự expire khi user giữ lần mới)
@@ -68,6 +68,8 @@ var holdIDNamespace = uuid.MustParse("9b0f3c5e-2d4a-4e8b-a1f7-3c6d8e2b5a14")
 type Config struct {
 	HoldTTL         time.Duration
 	MaxSeatsPerHold int
+	// MaxHoldExtension chặn ttl của ExtendHold, để một hold không giữ ghế quá lâu.
+	MaxHoldExtension time.Duration
 }
 
 // Service chứa mọi dependency cần cho nghiệp vụ. An toàn khi dùng đồng thời từ nhiều goroutine
@@ -406,6 +408,62 @@ func (s *Service) ConfirmHold(ctx context.Context, holdID uuid.UUID) (repo.Hold,
 	// Lý do: DB đã commit rồi, dù client vừa hủy request thì vẫn nên cập nhật Redis cho xong.
 	if err := s.locks.MarkSold(context.WithoutCancel(ctx), hold.EventID, hold.SeatIds, hold.ID); err != nil {
 		s.log.WarnContext(ctx, "redis mark sold failed", "hold_id", hold.ID, "err", err)
+	}
+	return hold, nil
+}
+
+// ExtendHold kéo dài hạn của hold tới now + ttl. Order gọi khi tạo đơn, để hold sống lâu hơn hạn
+// thanh toán (nếu không, tiền có thể về sau khi ghế đã hết hạn giữ).
+//
+// Chỉ kéo dài, không rút ngắn: hạn hiện tại đã xa hơn now + ttl thì giữ nguyên. Nhờ vậy gọi lại
+// (Order retry) luôn an toàn.
+func (s *Service) ExtendHold(ctx context.Context, holdID, userID uuid.UUID, ttl time.Duration) (repo.Hold, error) {
+	if ttl <= 0 || ttl > s.cfg.MaxHoldExtension {
+		return repo.Hold{}, invalidArg("ttl must be in (0, %s]", s.cfg.MaxHoldExtension)
+	}
+	var hold repo.Hold
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		var err error
+		// Khóa hold trước (chỉ hold active, chưa hết hạn, đúng chủ), ghế sau.
+		hold, err = q.ExtendHold(ctx, repo.ExtendHoldParams{ID: holdID, UserID: userID, ExpiresAt: time.Now().Add(ttl)})
+		if err != nil {
+			return err
+		}
+		// held_until của ghế luôn bằng expires_at của hold (dùng giá trị DB trả về, đã qua GREATEST).
+		n, err := q.ExtendSeatsByHold(ctx, repo.ExtendSeatsByHoldParams{HoldID: holdID, HeldUntil: hold.ExpiresAt})
+		if err != nil {
+			return err
+		}
+		if int(n) != len(hold.SeatIds) {
+			// Cùng lý do như ConfirmHold: không để hold sống lâu hơn ghế của nó. ROLLBACK.
+			return ErrHoldExpired
+		}
+		return nil
+	})
+	// Không gia hạn được: đọc lại để biết lý do.
+	if errors.Is(err, pgx.ErrNoRows) {
+		h, err := s.GetHold(ctx, holdID)
+		switch {
+		case err != nil:
+			return repo.Hold{}, err // ErrNotFound
+		case h.UserID != userID:
+			return repo.Hold{}, ErrPermissionDenied
+		case h.Status == HoldExpired:
+			return repo.Hold{}, ErrHoldExpired
+		default:
+			return repo.Hold{}, ErrHoldNotActive // released / confirmed
+		}
+	}
+	if err != nil {
+		return repo.Hold{}, err
+	}
+	// Gia hạn key Redis sau khi Postgres đã commit. Lỗi chỉ log: key hết hạn sớm thì request tranh
+	// ghế đi xuống Postgres, nơi ghế vẫn held tới hạn mới.
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	if _, err := s.locks.Extend(rctx, hold.EventID, hold.SeatIds, hold.ID, hold.ExpiresAt); err != nil {
+		s.log.WarnContext(ctx, "redis extend failed", "hold_id", hold.ID, "err", err)
 	}
 	return hold, nil
 }

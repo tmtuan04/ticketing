@@ -62,6 +62,24 @@ FROM target t
 WHERE s.event_id = t.event_id
   AND s.seat_id = t.seat_id;
 
+-- name: ExtendSeatsByHold :execrows
+-- Đồng bộ held_until của ghế với hạn mới của hold (ExtendHold), để ghế không bị coi là quá hạn
+-- trước hold. Không đổi trạng thái nên không tăng version.
+WITH target AS (
+    SELECT event_id, seat_id
+    FROM seat_inventory
+    WHERE hold_id = @hold_id::uuid
+      AND status = 'held'
+    ORDER BY event_id, seat_id
+    FOR UPDATE
+)
+UPDATE seat_inventory s
+SET held_until = @held_until::timestamptz,
+    updated_at = now()
+FROM target t
+WHERE s.event_id = t.event_id
+  AND s.seat_id = t.seat_id;
+
 -- name: ReleaseSeatsByHolds :execrows
 -- Trả ghế về available. Chỉ đụng ghế vẫn còn thuộc các hold này: ghế quá hạn đã bị
 -- hold khác lấy thì hold_id đã đổi nên không bị nhả nhầm.

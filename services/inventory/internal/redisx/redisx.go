@@ -39,6 +39,10 @@ var (
 	//go:embed release.lua
 	releaseSrc    string
 	releaseScript = redis.NewScript(releaseSrc)
+
+	//go:embed extend.lua
+	extendSrc    string
+	extendScript = redis.NewScript(extendSrc)
 )
 
 // SeatLocks bọc Redis client, cung cấp các thao tác giữ/nhả/đánh dấu bán ghế.
@@ -108,6 +112,16 @@ func (l *SeatLocks) Release(ctx context.Context, eventID uuid.UUID, seatIDs []uu
 	n, err := releaseScript.Run(ctx, l.rdb, seatKeys(eventID, seatIDs), holdID.String()).Int()
 	if err != nil {
 		return 0, fmt.Errorf("redisx: release: %w", err)
+	}
+	return n, nil
+}
+
+// Extend đặt hạn mới (expiresAt) cho các key còn thuộc holdID. Trả về số key đã gia hạn.
+// Key đã mất hoặc đã đổi chủ thì bỏ qua, xem extend.lua.
+func (l *SeatLocks) Extend(ctx context.Context, eventID uuid.UUID, seatIDs []uuid.UUID, holdID uuid.UUID, expiresAt time.Time) (int, error) {
+	n, err := extendScript.Run(ctx, l.rdb, seatKeys(eventID, seatIDs), holdID.String(), expiresAt.UnixMilli()).Int()
+	if err != nil {
+		return 0, fmt.Errorf("redisx: extend: %w", err)
 	}
 	return n, nil
 }

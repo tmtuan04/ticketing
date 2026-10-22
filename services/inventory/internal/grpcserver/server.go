@@ -132,6 +132,28 @@ func (s *Server) ConfirmHold(ctx context.Context, req *inventoryv1.ConfirmHoldRe
 	return &inventoryv1.ConfirmHoldResponse{Hold: holdToPB(h)}, nil
 }
 
+// ExtendHold kéo dài hạn hold (Order gọi khi tạo đơn). Cần user_id như ReleaseHold vì Order gọi
+// thay mặt user, không được gia hạn hold của người khác.
+func (s *Server) ExtendHold(ctx context.Context, req *inventoryv1.ExtendHoldRequest) (*inventoryv1.ExtendHoldResponse, error) {
+	holdID, err := parseID("hold_id", req.GetHoldId())
+	if err != nil {
+		return nil, err
+	}
+	userID, err := parseID("user_id", req.GetUserId())
+	if err != nil {
+		return nil, err
+	}
+	// Duration của proto là {seconds, nanos}; CheckValid bắt cả nil và giá trị ngoài khoảng.
+	if err := req.GetTtl().CheckValid(); err != nil {
+		return nil, status.Error(codes.InvalidArgument, "ttl must be a valid duration")
+	}
+	h, err := s.svc.ExtendHold(ctx, holdID, userID, req.GetTtl().AsDuration())
+	if err != nil {
+		return nil, s.toStatus(ctx, err)
+	}
+	return &inventoryv1.ExtendHoldResponse{Hold: holdToPB(h)}, nil
+}
+
 // GetHold đọc một hold theo id.
 func (s *Server) GetHold(ctx context.Context, req *inventoryv1.GetHoldRequest) (*inventoryv1.GetHoldResponse, error) {
 	holdID, err := parseID("hold_id", req.GetHoldId())

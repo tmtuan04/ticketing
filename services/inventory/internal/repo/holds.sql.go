@@ -102,6 +102,43 @@ func (q *Queries) ExpireDueHolds(ctx context.Context, batchSize int32) ([]Expire
 	return items, nil
 }
 
+const extendHold = `-- name: ExtendHold :one
+UPDATE holds
+SET expires_at = GREATEST(expires_at, $1::timestamptz),
+    updated_at = now()
+WHERE id = $2
+  AND user_id = $3
+  AND status = 'active'
+  AND expires_at > now()
+RETURNING id, event_id, user_id, seat_ids, status, idempotency_key, expires_at, created_at, updated_at
+`
+
+type ExtendHoldParams struct {
+	ExpiresAt time.Time
+	ID        uuid.UUID
+	UserID    uuid.UUID
+}
+
+// Kéo dài hạn của hold còn active và chưa hết hạn (Order gọi khi tạo đơn).
+// GREATEST: chỉ kéo dài, không rút ngắn; gọi lại với hạn nhỏ hơn thì giữ nguyên hạn cũ.
+// Không có dòng trả về thì service đọc lại hold để biết lý do (giống MarkHold*).
+func (q *Queries) ExtendHold(ctx context.Context, arg ExtendHoldParams) (Hold, error) {
+	row := q.db.QueryRow(ctx, extendHold, arg.ExpiresAt, arg.ID, arg.UserID)
+	var i Hold
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.UserID,
+		&i.SeatIds,
+		&i.Status,
+		&i.IdempotencyKey,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getActiveHoldForUpdate = `-- name: GetActiveHoldForUpdate :one
 SELECT id, event_id, user_id, seat_ids, status, idempotency_key, expires_at, created_at, updated_at FROM holds
 WHERE event_id = $1

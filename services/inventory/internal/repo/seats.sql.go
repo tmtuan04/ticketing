@@ -25,6 +25,38 @@ func (q *Queries) CountSeatsByEvent(ctx context.Context, eventID uuid.UUID) (int
 	return count, err
 }
 
+const extendSeatsByHold = `-- name: ExtendSeatsByHold :execrows
+WITH target AS (
+    SELECT event_id, seat_id
+    FROM seat_inventory
+    WHERE hold_id = $2::uuid
+      AND status = 'held'
+    ORDER BY event_id, seat_id
+    FOR UPDATE
+)
+UPDATE seat_inventory s
+SET held_until = $1::timestamptz,
+    updated_at = now()
+FROM target t
+WHERE s.event_id = t.event_id
+  AND s.seat_id = t.seat_id
+`
+
+type ExtendSeatsByHoldParams struct {
+	HeldUntil time.Time
+	HoldID    uuid.UUID
+}
+
+// Đồng bộ held_until của ghế với hạn mới của hold (ExtendHold), để ghế không bị coi là quá hạn
+// trước hold. Không đổi trạng thái nên không tăng version.
+func (q *Queries) ExtendSeatsByHold(ctx context.Context, arg ExtendSeatsByHoldParams) (int64, error) {
+	result, err := q.db.Exec(ctx, extendSeatsByHold, arg.HeldUntil, arg.HoldID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const holdSeats = `-- name: HoldSeats :many
 WITH target AS (
     SELECT event_id, seat_id

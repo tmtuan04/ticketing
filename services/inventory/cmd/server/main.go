@@ -131,8 +131,9 @@ func run() error {
 	// Dependency injection thủ công: tạo dependency rồi truyền vào constructor.
 	// Go không có DI container như NestJS; truyền tay thế này là cách phổ biến nhất.
 	svc := service.New(pool, redisx.New(rdb), service.Config{
-		HoldTTL:         cfg.HoldTTL,
-		MaxSeatsPerHold: cfg.MaxSeatsPerHold,
+		HoldTTL:          cfg.HoldTTL,
+		MaxSeatsPerHold:  cfg.MaxSeatsPerHold,
+		MaxHoldExtension: cfg.MaxHoldExtension,
 	}, log)
 
 	// --- gRPC server ------------------------------------------------------------

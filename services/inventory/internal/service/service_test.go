@@ -149,7 +149,7 @@ func newService(t *testing.T, ttl time.Duration) *service.Service {
 // TestHoldSeats_RedisDown). Log bị bỏ đi (io.Discard) để output test gọn.
 func newServiceWith(c *redis.Client, ttl time.Duration) *service.Service {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return service.New(pool, redisx.New(c), service.Config{HoldTTL: ttl, MaxSeatsPerHold: 8}, log)
+	return service.New(pool, redisx.New(c), service.Config{HoldTTL: ttl, MaxSeatsPerHold: 8, MaxHoldExtension: 15 * time.Minute}, log)
 }
 
 // newEvent tạo một event mới với `seats` ghế ngẫu nhiên. Mỗi test dùng event_id riêng nên
@@ -497,6 +497,100 @@ func TestConfirmAndRelease(t *testing.T) {
 
 	_, err = svc.GetHold(ctx, uuid.New())
 	wantErr(t, err, service.ErrNotFound)
+}
+
+// ExtendHold: hold được gia hạn sống qua TTL gốc, reaper không thu hồi, vẫn confirm được.
+// Postgres (hold + ghế) và Redis cùng nhận hạn mới; gọi lại với ttl ngắn hơn không rút ngắn hạn.
+func TestExtendHold(t *testing.T) {
+	const ttl = time.Second
+	svc := newService(t, ttl)
+	ctx := context.Background()
+	ev, seats := newEvent(t, svc, 2)
+	user := uuid.New()
+	h := hold(t, svc, ev, user, seats...)
+
+	ext, err := svc.ExtendHold(ctx, h.ID, user, time.Minute)
+	must(t, err)
+	if ext.Status != service.HoldActive || ext.ExpiresAt.Sub(h.ExpiresAt) < 50*time.Second {
+		t.Fatalf("sau gia hạn: status %s, expires_at %s (cũ %s)", ext.Status, ext.ExpiresAt, h.ExpiresAt)
+	}
+	// held_until của mọi ghế phải bằng hạn mới của hold.
+	var synced int
+	must(t, pool.QueryRow(ctx, `SELECT count(*) FROM seat_inventory WHERE hold_id = $1 AND status = 'held' AND held_until = $2`, h.ID, ext.ExpiresAt).Scan(&synced))
+	if synced != len(seats) {
+		t.Fatalf("%d/%d ghế có held_until = hạn mới", synced, len(seats))
+	}
+	for _, s := range seats {
+		if pttl := rdb.PTTL(ctx, redisx.SeatKey(ev, s)).Val(); pttl < 50*time.Second {
+			t.Fatalf("key redis ghế %s còn TTL %s, muốn ~1 phút", s, pttl)
+		}
+	}
+
+	// Chỉ kéo dài, không rút ngắn.
+	again, err := svc.ExtendHold(ctx, h.ID, user, 10*time.Second)
+	must(t, err)
+	if !again.ExpiresAt.Equal(ext.ExpiresAt) {
+		t.Fatalf("gia hạn ngắn hơn làm đổi hạn: %s -> %s", ext.ExpiresAt, again.ExpiresAt)
+	}
+
+	// Qua TTL gốc: hold vẫn active, reaper bỏ qua, người khác không giành được ghế.
+	time.Sleep(ttl + 500*time.Millisecond)
+	_, err = svc.ExpireDueHolds(ctx, 100)
+	must(t, err)
+	got, err := svc.GetHold(ctx, h.ID)
+	must(t, err)
+	if got.Status != service.HoldActive {
+		t.Fatalf("hold đã gia hạn bị %s", got.Status)
+	}
+	res, err := svc.HoldSeats(ctx, service.HoldRequest{EventID: ev, UserID: uuid.New(), SeatIDs: seats[:1], IdempotencyKey: "other"})
+	must(t, err)
+	if res.Hold != nil {
+		t.Fatal("người khác giành được ghế của hold đã gia hạn")
+	}
+	_, err = svc.ConfirmHold(ctx, h.ID)
+	must(t, err)
+}
+
+// ExtendHold từ chối: ttl sai, hold của người khác, không tồn tại, đã nhả/đã bán, đã hết hạn.
+func TestExtendHold_Errors(t *testing.T) {
+	const ttl = time.Second
+	svc := newService(t, ttl)
+	ctx := context.Background()
+	ev, seats := newEvent(t, svc, 4)
+	user := uuid.New()
+
+	h := hold(t, svc, ev, user, seats[0])
+	for _, bad := range []time.Duration{0, -time.Second, 15*time.Minute + time.Second} {
+		_, err := svc.ExtendHold(ctx, h.ID, user, bad)
+		wantErr(t, err, service.ErrInvalidArgument)
+	}
+	_, err := svc.ExtendHold(ctx, h.ID, uuid.New(), time.Minute)
+	wantErr(t, err, service.ErrPermissionDenied)
+	_, err = svc.ExtendHold(ctx, uuid.New(), user, time.Minute)
+	wantErr(t, err, service.ErrNotFound)
+
+	// Đã nhả: không gia hạn được, ghế vẫn trống.
+	_, err = svc.ReleaseHold(ctx, h.ID, user)
+	must(t, err)
+	_, err = svc.ExtendHold(ctx, h.ID, user, time.Minute)
+	wantErr(t, err, service.ErrHoldNotActive)
+	if rdb.Exists(ctx, redisx.SeatKey(ev, seats[0])).Val() != 0 {
+		t.Fatal("gia hạn hold đã nhả tạo lại key redis")
+	}
+
+	// Đã bán: không gia hạn được.
+	sold := hold(t, svc, ev, uuid.New(), seats[1])
+	_, err = svc.ConfirmHold(ctx, sold.ID)
+	must(t, err)
+	_, err = svc.ExtendHold(ctx, sold.ID, sold.UserID, time.Minute)
+	wantErr(t, err, service.ErrHoldNotActive)
+
+	// Đã hết hạn (reaper chưa chạy): không "hồi sinh" được hold.
+	late := hold(t, svc, ev, uuid.New(), seats[2])
+	time.Sleep(ttl + 500*time.Millisecond)
+	_, err = svc.ExtendHold(ctx, late.ID, late.UserID, time.Minute)
+	wantErr(t, err, service.ErrHoldExpired)
+	hold(t, svc, ev, uuid.New(), seats[2])
 }
 
 // Redis sập: mọi thứ vẫn đúng nhờ Postgres, chỉ mất lớp lọc nhanh.

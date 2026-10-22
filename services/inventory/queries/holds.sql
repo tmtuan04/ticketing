@@ -48,6 +48,19 @@ WHERE id = @id
   AND expires_at > now()
 RETURNING *;
 
+-- name: ExtendHold :one
+-- Kéo dài hạn của hold còn active và chưa hết hạn (Order gọi khi tạo đơn).
+-- GREATEST: chỉ kéo dài, không rút ngắn; gọi lại với hạn nhỏ hơn thì giữ nguyên hạn cũ.
+-- Không có dòng trả về thì service đọc lại hold để biết lý do (giống MarkHold*).
+UPDATE holds
+SET expires_at = GREATEST(expires_at, @expires_at::timestamptz),
+    updated_at = now()
+WHERE id = @id
+  AND user_id = @user_id
+  AND status = 'active'
+  AND expires_at > now()
+RETURNING *;
+
 -- name: MarkHoldExpired :one
 -- Chỉ expire hold active đã quá hạn. Còn hạn thì không có dòng nào -> service báo
 -- ErrActiveHoldExists.
