@@ -1,0 +1,1016 @@
+{
+  "info": {
+    "name": "Ticketing - Phase 1 (auth, catalog, holds)",
+    "description": "Luồng end-to-end Phase 1 qua gateway trên stack thật (`make up`).\n\nMỗi lần chạy tạo user/event mới nên chạy lại được nhiều lần. Lưu ý rate limit auth mặc định 10 request/phút/IP: collection dùng 8, chạy lại liền nhau thì chờ 1 phút.\n\nFolder `5. Expiry` chờ hold hết hạn rồi kiểm tra reaper; chỉ chạy khi thời gian chờ <= `maxWaitSec`, nên cần dựng stack với HOLD_TTL ngắn (vd `HOLD_TTL=15s make up`), nếu không folder này bị bỏ qua.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "adminEmail", "value": "admin@ticketing.local" },
+    { "key": "adminPassword", "value": "admin12345" },
+    { "key": "maxWaitSec", "value": "90" },
+    { "key": "reaperSlackMs", "value": "12000" }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Không route nào được trả 5xx trong luồng này.",
+          "pm.test('no 5xx', () => pm.expect(pm.response.code).to.be.below(500));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health",
+      "item": [
+        {
+          "name": "Health check",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('runId', Date.now().toString(36));",
+                  "pm.collectionVariables.set('expirySkipped', '0');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + postgres up', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.status).to.eql('ok');",
+                  "  pm.expect(b.postgres).to.eql('up');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/healthz" }
+        }
+      ]
+    },
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Register user A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + tokens + role user', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.accessToken).to.be.a('string');",
+                  "  pm.expect(b.refreshToken).to.be.a('string');",
+                  "  pm.expect(b.tokenType).to.eql('Bearer');",
+                  "  pm.expect(b.user.role).to.eql('user');",
+                  "  pm.expect(b.user.email).to.eql(`user-a-${pm.collectionVariables.get('runId')}@test.local`);",
+                  "  pm.collectionVariables.set('userAToken', b.accessToken);",
+                  "  pm.collectionVariables.set('userARefresh', b.refreshToken);",
+                  "  pm.collectionVariables.set('userAId', b.user.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"  User-A-{{runId}}@Test.local \",\n  \"password\": \"password123\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Email có hoa/thường và khoảng trắng để kiểm tra chuẩn hoá."
+          }
+        },
+        {
+          "name": "Register user B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('userBToken', b.accessToken);",
+                  "pm.collectionVariables.set('userBRefresh', b.refreshToken);",
+                  "pm.collectionVariables.set('userBId', b.user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"user-b-{{runId}}@test.local\",\n  \"password\": \"password123\"\n}" },
+            "url": "{{baseUrl}}/auth/register"
+          }
+        },
+        {
+          "name": "Register duplicate email -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('409', () => pm.response.to.have.status(409));"] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"user-a-{{runId}}@test.local\",\n  \"password\": \"password123\"\n}" },
+            "url": "{{baseUrl}}/auth/register"
+          }
+        },
+        {
+          "name": "Login admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + role admin', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.user.role).to.eql('admin');",
+                  "  pm.collectionVariables.set('adminToken', b.accessToken);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}" },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Login wrong password -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('401', () => pm.response.to.have.status(401));"] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"user-a-{{runId}}@test.local\",\n  \"password\": \"wrong-password\"\n}" },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Me (user A)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + đúng user', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('userAId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/me"
+          }
+        },
+        {
+          "name": "Me without token -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('401', () => pm.response.to.have.status(401));"] }
+            }
+          ],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/auth/me" }
+        },
+        {
+          "name": "Refresh (rotation)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + refresh token mới', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const b = pm.response.json();",
+                  "  const old = pm.collectionVariables.get('userARefresh');",
+                  "  pm.expect(b.refreshToken).to.not.eql(old);",
+                  "  pm.collectionVariables.set('userARefreshOld', old);",
+                  "  pm.collectionVariables.set('userARefresh', b.refreshToken);",
+                  "  pm.collectionVariables.set('userAToken', b.accessToken);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{userARefresh}}\"\n}" },
+            "url": "{{baseUrl}}/auth/refresh"
+          }
+        },
+        {
+          "name": "Refresh reuse old token -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('401', () => pm.response.to.have.status(401));"] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{userARefreshOld}}\"\n}" },
+            "url": "{{baseUrl}}/auth/refresh",
+            "description": "Dùng lại token đã rotate => coi như bị lộ, thu hồi cả family."
+          }
+        },
+        {
+          "name": "Refresh newest token after reuse -> 401 (family revoked)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('401', () => pm.response.to.have.status(401));"] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{userARefresh}}\"\n}" },
+            "url": "{{baseUrl}}/auth/refresh"
+          }
+        },
+        {
+          "name": "Logout user B",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('204', () => pm.response.to.have.status(204));"] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{userBRefresh}}\"\n}" },
+            "url": "{{baseUrl}}/auth/logout",
+            "description": "Chỉ thu hồi refresh token; access token của B vẫn dùng được tới khi hết hạn."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Admin catalog",
+      "item": [
+        {
+          "name": "Create venue as user -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('403', () => pm.response.to.have.status(403));"] }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Not allowed\"\n}" },
+            "url": "{{baseUrl}}/admin/venues"
+          }
+        },
+        {
+          "name": "Create venue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('venueId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman Arena {{runId}}\",\n  \"address\": \"1 Dai Co Viet, Ha Noi\"\n}" },
+            "url": "{{baseUrl}}/admin/venues"
+          }
+        },
+        {
+          "name": "Create event - invalid body -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('400', () => pm.response.to.have.status(400));"] }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Bad\",\n  \"venueId\": \"{{venueId}}\",\n  \"startsAt\": \"not-a-date\",\n  \"tiers\": []\n}" },
+            "url": "{{baseUrl}}/admin/events"
+          }
+        },
+        {
+          "name": "Create event (draft)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.collectionVariables.set('startsAt', new Date(Date.now() + 30 * 86400e3).toISOString());"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + draft + 2 tiers', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.status).to.eql('draft');",
+                  "  pm.expect(b.venue.id).to.eql(pm.collectionVariables.get('venueId'));",
+                  "  pm.expect(b.tiers).to.have.length(2);",
+                  "  pm.collectionVariables.set('eventId', b.id);",
+                  "  pm.collectionVariables.set('tierVipId', b.tiers.find((t) => t.name === 'VIP').id);",
+                  "  pm.collectionVariables.set('tierStdId', b.tiers.find((t) => t.name === 'Standard').id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Concert {{runId}}\",\n  \"description\": \"Phase 1 e2e\",\n  \"venueId\": \"{{venueId}}\",\n  \"startsAt\": \"{{startsAt}}\",\n  \"tiers\": [\n    { \"name\": \"VIP\", \"priceAmount\": 2000000, \"currency\": \"VND\" },\n    { \"name\": \"Standard\", \"priceAmount\": 800000, \"currency\": \"VND\" }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/admin/events"
+          }
+        },
+        {
+          "name": "Generate seats",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + 6 ghế', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().seatCount).to.eql(6);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"blocks\": [\n    { \"section\": \"A\", \"rowCount\": 1, \"seatsPerRow\": 3, \"tierId\": \"{{tierVipId}}\" },\n    { \"section\": \"B\", \"rowCount\": 1, \"seatsPerRow\": 3, \"tierId\": \"{{tierStdId}}\" }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/admin/events/{{eventId}}/seats"
+          }
+        },
+        {
+          "name": "Generate seats again (idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + vẫn 6 ghế', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().seatCount).to.eql(6);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"blocks\": [\n    { \"section\": \"A\", \"rowCount\": 1, \"seatsPerRow\": 3, \"tierId\": \"{{tierVipId}}\" },\n    { \"section\": \"B\", \"rowCount\": 1, \"seatsPerRow\": 3, \"tierId\": \"{{tierStdId}}\" }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/admin/events/{{eventId}}/seats"
+          }
+        },
+        {
+          "name": "Public get draft event -> 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('404', () => pm.response.to.have.status(404));"] }
+            }
+          ],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}" }
+        },
+        {
+          "name": "Admin get draft event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + draft', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('draft');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/events/{{eventId}}"
+          }
+        },
+        {
+          "name": "Publish event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + published', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('published');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "url": "{{baseUrl}}/admin/events/{{eventId}}/publish"
+          }
+        },
+        {
+          "name": "Publish again (idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + published', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('published');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "url": "{{baseUrl}}/admin/events/{{eventId}}/publish"
+          }
+        },
+        {
+          "name": "Generate seats after publish -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('409', () => pm.response.to.have.status(409));"] }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"blocks\": [\n    { \"section\": \"C\", \"rowCount\": 1, \"seatsPerRow\": 2, \"tierId\": \"{{tierStdId}}\" }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/admin/events/{{eventId}}/seats"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Browse (public)",
+      "item": [
+        {
+          "name": "List events",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + chỉ có event published', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.events).to.be.an('array').that.is.not.empty;",
+                  "  b.events.forEach((e) => pm.expect(e.status).to.eql('published'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events?pageSize=100" }
+        },
+        {
+          "name": "Get event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + published', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.id).to.eql(pm.collectionVariables.get('eventId'));",
+                  "  pm.expect(b.status).to.eql('published');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}" }
+        },
+        {
+          "name": "List seats (all available)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + 6 ghế available', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const seats = pm.response.json().seats;",
+                  "  pm.expect(seats).to.have.length(6);",
+                  "  seats.forEach((s) => pm.expect(s.status).to.eql('available'));",
+                  "  // Sắp xếp ổn định để seat1..seat3 luôn là A-1-1, A-1-2, A-1-3",
+                  "  seats.sort((x, y) => x.section.localeCompare(y.section) || x.row.localeCompare(y.row, undefined, { numeric: true }) || x.number - y.number);",
+                  "  [1, 2, 3].forEach((i) => pm.collectionVariables.set(`seat${i}`, seats[i - 1].seatId));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}/seats" }
+        }
+      ]
+    },
+    {
+      "name": "4. Holds",
+      "item": [
+        {
+          "name": "Hold without Idempotency-Key -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('400', () => pm.response.to.have.status(400));"] }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat1}}\"]\n}" },
+            "url": "{{baseUrl}}/events/{{eventId}}/holds"
+          }
+        },
+        {
+          "name": "User A holds seat1+seat2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + active', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.status).to.eql('active');",
+                  "  pm.expect(b.userId).to.eql(pm.collectionVariables.get('userAId'));",
+                  "  pm.expect(b.seatIds).to.have.members([pm.collectionVariables.get('seat1'), pm.collectionVariables.get('seat2')]);",
+                  "  pm.expect(new Date(b.expiresAt).getTime()).to.be.above(Date.now());",
+                  "  pm.collectionVariables.set('holdAId', b.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "hold-a-{{runId}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat1}}\", \"{{seat2}}\"]\n}" },
+            "url": "{{baseUrl}}/events/{{eventId}}/holds"
+          }
+        },
+        {
+          "name": "Retry same Idempotency-Key -> same hold",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + cùng hold id', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('holdAId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "hold-a-{{runId}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat1}}\", \"{{seat2}}\"]\n}" },
+            "url": "{{baseUrl}}/events/{{eventId}}/holds"
+          }
+        },
+        {
+          "name": "Second hold same event -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('409 (1 hold active/user/event)', () => pm.response.to.have.status(409));"] }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "hold-a2-{{runId}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat3}}\"]\n}" },
+            "url": "{{baseUrl}}/events/{{eventId}}/holds"
+          }
+        },
+        {
+          "name": "Seats show seat1+seat2 held",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('seat1, seat2 held; seat3 available', () => {",
+                  "  const st = Object.fromEntries(pm.response.json().seats.map((s) => [s.seatId, s.status]));",
+                  "  pm.expect(st[pm.collectionVariables.get('seat1')]).to.eql('held');",
+                  "  pm.expect(st[pm.collectionVariables.get('seat2')]).to.eql('held');",
+                  "  pm.expect(st[pm.collectionVariables.get('seat3')]).to.eql('available');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}/seats" }
+        },
+        {
+          "name": "User B holds seat2+seat3 -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 + báo đúng ghế bị chiếm', () => {",
+                  "  pm.response.to.have.status(409);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.unavailableSeatIds).to.include(pm.collectionVariables.get('seat2'));",
+                  "  pm.expect(b.unavailableSeatIds).to.not.include(pm.collectionVariables.get('seat3'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userBToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "hold-b1-{{runId}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat2}}\", \"{{seat3}}\"]\n}" },
+            "url": "{{baseUrl}}/events/{{eventId}}/holds"
+          }
+        },
+        {
+          "name": "User B gets A's hold -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('403', () => pm.response.to.have.status(403));"] }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userBToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{baseUrl}}/holds/{{holdAId}}"
+          }
+        },
+        {
+          "name": "User B releases A's hold -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('403', () => pm.response.to.have.status(403));"] }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userBToken}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": "{{baseUrl}}/holds/{{holdAId}}"
+          }
+        },
+        {
+          "name": "User A gets own hold",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + active', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('active');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{baseUrl}}/holds/{{holdAId}}"
+          }
+        },
+        {
+          "name": "Admin gets A's hold",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{baseUrl}}/holds/{{holdAId}}"
+          }
+        },
+        {
+          "name": "User A releases hold",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + released', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('released');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": "{{baseUrl}}/holds/{{holdAId}}"
+          }
+        },
+        {
+          "name": "Release again (idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + released', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('released');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": "{{baseUrl}}/holds/{{holdAId}}"
+          }
+        },
+        {
+          "name": "Seats available again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('seat1, seat2 available', () => {",
+                  "  const st = Object.fromEntries(pm.response.json().seats.map((s) => [s.seatId, s.status]));",
+                  "  pm.expect(st[pm.collectionVariables.get('seat1')]).to.eql('available');",
+                  "  pm.expect(st[pm.collectionVariables.get('seat2')]).to.eql('available');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}/seats" }
+        },
+        {
+          "name": "User B holds seat2+seat3",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + active', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.status).to.eql('active');",
+                  "  pm.collectionVariables.set('holdBId', b.id);",
+                  "  pm.collectionVariables.set('holdBExpiresAt', b.expiresAt);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userBToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "hold-b2-{{runId}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat2}}\", \"{{seat3}}\"]\n}" },
+            "url": "{{baseUrl}}/events/{{eventId}}/holds"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Expiry (needs short HOLD_TTL)",
+      "description": "Chờ hold của B hết hạn, reaper trả ghế về available, rồi A giữ lại được. Bị bỏ qua nếu phải chờ quá `maxWaitSec` (HOLD_TTL mặc định 5m).",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.collectionVariables.get('expirySkipped') === '1') {",
+              "  pm.execution.skipRequest();",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Wait until expired, then get B's hold",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const waitMs = new Date(pm.collectionVariables.get('holdBExpiresAt')).getTime() - Date.now()",
+                  "  + Number(pm.collectionVariables.get('reaperSlackMs'));",
+                  "const maxMs = Number(pm.collectionVariables.get('maxWaitSec')) * 1000;",
+                  "if (waitMs > maxMs) {",
+                  "  console.warn(`Expiry: cần chờ ${Math.round(waitMs / 1000)}s > maxWaitSec, bỏ qua. Chạy stack với HOLD_TTL ngắn (vd 15s) để test phần này.`);",
+                  "  pm.collectionVariables.set('expirySkipped', '1');",
+                  "  pm.execution.skipRequest();",
+                  "} else if (waitMs > 0) {",
+                  "  console.log(`Expiry: chờ ${Math.round(waitMs / 1000)}s cho hold hết hạn và reaper chạy...`);",
+                  "  setTimeout(() => {}, waitMs);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + expired', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('expired');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userBToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{baseUrl}}/holds/{{holdBId}}"
+          }
+        },
+        {
+          "name": "Seats released by reaper",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('seat2, seat3 available', () => {",
+                  "  const st = Object.fromEntries(pm.response.json().seats.map((s) => [s.seatId, s.status]));",
+                  "  pm.expect(st[pm.collectionVariables.get('seat2')]).to.eql('available');",
+                  "  pm.expect(st[pm.collectionVariables.get('seat3')]).to.eql('available');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}/seats" }
+        },
+        {
+          "name": "User A re-holds seat2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + active', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(pm.response.json().status).to.eql('active');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "hold-a3-{{runId}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat2}}\"]\n}" },
+            "url": "{{baseUrl}}/events/{{eventId}}/holds"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -42,7 +42,8 @@ services:
     image: redpandadata/console:v2.7.2
     environment:
       KAFKA_BROKERS: redpanda:9092
-    ports: ["8080:8080"]
+    # 9080 ở host: trên Windows, Hyper-V/WinNAT hay giữ dải port quanh 8080 (xem `netsh int ipv4 show excludedportrange protocol=tcp`)
+    ports: ["9080:8080"]
     depends_on:
       redpanda: { condition: service_healthy }
 
@@ -63,7 +64,8 @@ services:
       GRPC_ADDR: ":50051"
       DATABASE_URL: postgres://app:app@postgres:5432/inventory_db?sslmode=disable
       REDIS_ADDR: redis:6379
-      HOLD_TTL: 5m
+      # override khi cần test hết hạn nhanh: HOLD_TTL=15s make up
+      HOLD_TTL: ${HOLD_TTL:-5m}
     ports: ["50051:50051"]
     healthcheck:
       test: ["CMD", "/inventory", "healthcheck"]
