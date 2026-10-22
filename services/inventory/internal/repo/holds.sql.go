@@ -27,6 +27,9 @@ type CreateHoldParams struct {
 	ExpiresAt      time.Time
 }
 
+// Tạo hold mới. id do service sinh sẵn (UUID v5 từ user_id + idempotency_key).
+// Có thể vi phạm unique index (trùng idempotency key, hoặc user đã có hold active trong event);
+// service bắt lỗi 23505 này trong isConflict.
 func (q *Queries) CreateHold(ctx context.Context, arg CreateHoldParams) (Hold, error) {
 	row := q.db.QueryRow(ctx, createHold,
 		arg.ID,
@@ -75,6 +78,10 @@ type ExpireDueHoldsRow struct {
 
 // Reaper: expire một lô hold quá hạn. SKIP LOCKED để nhiều instance chạy song song không
 // giẫm chân nhau và không phải chờ transaction Confirm/Release đang giữ khóa hold.
+// Subquery "due" chọn tối đa @batch_size hold quá hạn (cũ nhất trước) và khóa chúng;
+// dòng nào đang bị transaction khác khóa thì bỏ qua (SKIP LOCKED) thay vì đứng chờ.
+// UPDATE ... FROM nối bảng holds với "due" để chỉ cập nhật đúng các dòng đã chọn.
+// Dùng index một phần holds_expires_at_idx (chỉ chứa hold active) nên quét rất nhanh.
 func (q *Queries) ExpireDueHolds(ctx context.Context, batchSize int32) ([]ExpireDueHoldsRow, error) {
 	rows, err := q.db.Query(ctx, expireDueHolds, batchSize)
 	if err != nil {
@@ -110,6 +117,7 @@ type GetActiveHoldForUpdateParams struct {
 
 // Hold active của user trong event (tối đa 1, do unique index đảm bảo). Nếu đã quá hạn mà
 // reaper chưa quét thì service expire nó trước khi tạo hold mới.
+// FOR UPDATE khóa dòng này tới hết transaction, để không transaction khác sửa nó cùng lúc.
 func (q *Queries) GetActiveHoldForUpdate(ctx context.Context, arg GetActiveHoldForUpdateParams) (Hold, error) {
 	row := q.db.QueryRow(ctx, getActiveHoldForUpdate, arg.EventID, arg.UserID)
 	var i Hold
@@ -132,6 +140,7 @@ SELECT id, event_id, user_id, seat_ids, status, idempotency_key, expires_at, cre
 WHERE id = $1
 `
 
+// Đọc hold theo id. Không khóa dòng (chỉ đọc).
 func (q *Queries) GetHold(ctx context.Context, id uuid.UUID) (Hold, error) {
 	row := q.db.QueryRow(ctx, getHold, id)
 	var i Hold
@@ -160,6 +169,8 @@ type GetHoldByIdempotencyKeyParams struct {
 	IdempotencyKey string
 }
 
+// Tìm hold đã tạo bằng idempotency key này (để trả lại khi client retry).
+// Dùng unique index holds_user_idempotency_uidx.
 func (q *Queries) GetHoldByIdempotencyKey(ctx context.Context, arg GetHoldByIdempotencyKeyParams) (Hold, error) {
 	row := q.db.QueryRow(ctx, getHoldByIdempotencyKey, arg.UserID, arg.IdempotencyKey)
 	var i Hold
@@ -186,6 +197,7 @@ WHERE id = $1
 RETURNING id, event_id, user_id, seat_ids, status, idempotency_key, expires_at, created_at, updated_at
 `
 
+// Chỉ confirm hold còn active VÀ chưa hết hạn (so với giờ của DB, không phụ thuộc giờ server app).
 func (q *Queries) MarkHoldConfirmed(ctx context.Context, id uuid.UUID) (Hold, error) {
 	row := q.db.QueryRow(ctx, markHoldConfirmed, id)
 	var i Hold
@@ -212,6 +224,8 @@ WHERE id = $1
 RETURNING id, event_id, user_id, seat_ids, status, idempotency_key, expires_at, created_at, updated_at
 `
 
+// Chỉ expire hold active đã quá hạn. Còn hạn thì không có dòng nào -> service báo
+// ErrActiveHoldExists.
 func (q *Queries) MarkHoldExpired(ctx context.Context, id uuid.UUID) (Hold, error) {
 	row := q.db.QueryRow(ctx, markHoldExpired, id)
 	var i Hold
@@ -245,6 +259,7 @@ type MarkHoldReleasedParams struct {
 
 // Các câu MarkHold* chỉ chuyển trạng thái khi hợp lệ; không có dòng trả về (pgx.ErrNoRows)
 // thì service đọc lại hold để biết lý do. Trong transaction luôn khóa hold trước, ghế sau.
+// Điều kiện user_id = @user_id đảm bảo chỉ chủ hold mới nhả được.
 func (q *Queries) MarkHoldReleased(ctx context.Context, arg MarkHoldReleasedParams) (Hold, error) {
 	row := q.db.QueryRow(ctx, markHoldReleased, arg.ID, arg.UserID)
 	var i Hold

@@ -11,34 +11,60 @@ import (
 )
 
 type Querier interface {
+	// Tổng số ghế của event.
 	CountSeatsByEvent(ctx context.Context, eventID uuid.UUID) (int64, error)
+	// Tạo hold mới. id do service sinh sẵn (UUID v5 từ user_id + idempotency_key).
+	// Có thể vi phạm unique index (trùng idempotency key, hoặc user đã có hold active trong event);
+	// service bắt lỗi 23505 này trong isConflict.
 	CreateHold(ctx context.Context, arg CreateHoldParams) (Hold, error)
 	// Reaper: expire một lô hold quá hạn. SKIP LOCKED để nhiều instance chạy song song không
 	// giẫm chân nhau và không phải chờ transaction Confirm/Release đang giữ khóa hold.
+	// Subquery "due" chọn tối đa @batch_size hold quá hạn (cũ nhất trước) và khóa chúng;
+	// dòng nào đang bị transaction khác khóa thì bỏ qua (SKIP LOCKED) thay vì đứng chờ.
+	// UPDATE ... FROM nối bảng holds với "due" để chỉ cập nhật đúng các dòng đã chọn.
+	// Dùng index một phần holds_expires_at_idx (chỉ chứa hold active) nên quét rất nhanh.
 	ExpireDueHolds(ctx context.Context, batchSize int32) ([]ExpireDueHoldsRow, error)
 	// Hold active của user trong event (tối đa 1, do unique index đảm bảo). Nếu đã quá hạn mà
 	// reaper chưa quét thì service expire nó trước khi tạo hold mới.
+	// FOR UPDATE khóa dòng này tới hết transaction, để không transaction khác sửa nó cùng lúc.
 	GetActiveHoldForUpdate(ctx context.Context, arg GetActiveHoldForUpdateParams) (Hold, error)
+	// Đọc hold theo id. Không khóa dòng (chỉ đọc).
 	GetHold(ctx context.Context, id uuid.UUID) (Hold, error)
+	// Tìm hold đã tạo bằng idempotency key này (để trả lại khi client retry).
+	// Dùng unique index holds_user_idempotency_uidx.
 	GetHoldByIdempotencyKey(ctx context.Context, arg GetHoldByIdempotencyKeyParams) (Hold, error)
 	// Chốt chặn cuối sau Redis: chỉ lấy ghế còn trống hoặc đang giữ nhưng đã quá hạn.
 	// Trả về các ghế lấy được; nếu thiếu so với yêu cầu thì service rollback cả transaction.
 	// Quy ước khóa: mọi câu cập nhật nhiều ghế đều khóa theo thứ tự (event_id, seat_id) trong CTE
 	// trước khi UPDATE, để các transaction tranh cùng tập ghế không deadlock lẫn nhau.
+	// CTE (WITH target AS ...) là truy vấn con đặt tên: chọn và khóa (FOR UPDATE) các ghế hợp lệ,
+	// sau đó UPDATE ... FROM target chỉ cập nhật đúng những ghế đó.
+	// Khi hai transaction cùng tranh một ghế, transaction sau phải chờ khóa; khi được chạy tiếp,
+	// Postgres kiểm tra lại điều kiện WHERE trên dữ liệu mới nhất, thấy ghế đã 'held' nên bỏ qua.
+	// version tăng mỗi lần đổi trạng thái (tiện debug / optimistic locking sau này).
 	HoldSeats(ctx context.Context, arg HoldSeatsParams) ([]uuid.UUID, error)
 	// Idempotent: ghế đã có thì bỏ qua. Trả về số ghế mới thêm.
+	// unnest(mảng) biến mảng seat_ids thành nhiều dòng -> insert nhiều ghế trong 1 câu lệnh.
+	// @x::uuid là ép kiểu để sqlc biết chính xác kiểu tham số Go cần sinh.
 	InitSeats(ctx context.Context, arg InitSeatsParams) (int64, error)
 	// Trạng thái hiệu lực: ghế held đã quá hạn nhưng reaper chưa quét vẫn coi là còn trống.
+	// ::text ép kết quả CASE về text để sqlc sinh field Status kiểu string.
 	ListSeatsByEvent(ctx context.Context, eventID uuid.UUID) ([]ListSeatsByEventRow, error)
+	// Chỉ confirm hold còn active VÀ chưa hết hạn (so với giờ của DB, không phụ thuộc giờ server app).
 	MarkHoldConfirmed(ctx context.Context, id uuid.UUID) (Hold, error)
+	// Chỉ expire hold active đã quá hạn. Còn hạn thì không có dòng nào -> service báo
+	// ErrActiveHoldExists.
 	MarkHoldExpired(ctx context.Context, id uuid.UUID) (Hold, error)
 	// Các câu MarkHold* chỉ chuyển trạng thái khi hợp lệ; không có dòng trả về (pgx.ErrNoRows)
 	// thì service đọc lại hold để biết lý do. Trong transaction luôn khóa hold trước, ghế sau.
+	// Điều kiện user_id = @user_id đảm bảo chỉ chủ hold mới nhả được.
 	MarkHoldReleased(ctx context.Context, arg MarkHoldReleasedParams) (Hold, error)
 	// Trả ghế về available. Chỉ đụng ghế vẫn còn thuộc các hold này: ghế quá hạn đã bị
 	// hold khác lấy thì hold_id đã đổi nên không bị nhả nhầm.
+	// Nhận mảng hold_ids để reaper nhả ghế của cả lô hold trong một câu lệnh.
 	ReleaseSeatsByHolds(ctx context.Context, holdIds []uuid.UUID) (int64, error)
 	// held -> sold. Service so số dòng với số ghế của hold; thiếu nghĩa là đã có ghế bị lấy mất.
+	// Giữ nguyên hold_id trên ghế đã bán để biết ghế thuộc đơn nào (CHECK constraint bắt buộc).
 	SellSeatsByHold(ctx context.Context, holdID uuid.UUID) (int64, error)
 }
 

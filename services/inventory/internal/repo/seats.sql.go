@@ -17,6 +17,7 @@ SELECT count(*) FROM seat_inventory
 WHERE event_id = $1
 `
 
+// Tổng số ghế của event.
 func (q *Queries) CountSeatsByEvent(ctx context.Context, eventID uuid.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countSeatsByEvent, eventID)
 	var count int64
@@ -57,6 +58,11 @@ type HoldSeatsParams struct {
 // Trả về các ghế lấy được; nếu thiếu so với yêu cầu thì service rollback cả transaction.
 // Quy ước khóa: mọi câu cập nhật nhiều ghế đều khóa theo thứ tự (event_id, seat_id) trong CTE
 // trước khi UPDATE, để các transaction tranh cùng tập ghế không deadlock lẫn nhau.
+// CTE (WITH target AS ...) là truy vấn con đặt tên: chọn và khóa (FOR UPDATE) các ghế hợp lệ,
+// sau đó UPDATE ... FROM target chỉ cập nhật đúng những ghế đó.
+// Khi hai transaction cùng tranh một ghế, transaction sau phải chờ khóa; khi được chạy tiếp,
+// Postgres kiểm tra lại điều kiện WHERE trên dữ liệu mới nhất, thấy ghế đã 'held' nên bỏ qua.
+// version tăng mỗi lần đổi trạng thái (tiện debug / optimistic locking sau này).
 func (q *Queries) HoldSeats(ctx context.Context, arg HoldSeatsParams) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, holdSeats,
 		arg.HoldID,
@@ -94,6 +100,8 @@ type InitSeatsParams struct {
 }
 
 // Idempotent: ghế đã có thì bỏ qua. Trả về số ghế mới thêm.
+// unnest(mảng) biến mảng seat_ids thành nhiều dòng -> insert nhiều ghế trong 1 câu lệnh.
+// @x::uuid là ép kiểu để sqlc biết chính xác kiểu tham số Go cần sinh.
 func (q *Queries) InitSeats(ctx context.Context, arg InitSeatsParams) (int64, error) {
 	result, err := q.db.Exec(ctx, initSeats, arg.EventID, arg.SeatIds)
 	if err != nil {
@@ -116,6 +124,7 @@ type ListSeatsByEventRow struct {
 }
 
 // Trạng thái hiệu lực: ghế held đã quá hạn nhưng reaper chưa quét vẫn coi là còn trống.
+// ::text ép kết quả CASE về text để sqlc sinh field Status kiểu string.
 func (q *Queries) ListSeatsByEvent(ctx context.Context, eventID uuid.UUID) ([]ListSeatsByEventRow, error) {
 	rows, err := q.db.Query(ctx, listSeatsByEvent, eventID)
 	if err != nil {
@@ -158,6 +167,7 @@ WHERE s.event_id = t.event_id
 
 // Trả ghế về available. Chỉ đụng ghế vẫn còn thuộc các hold này: ghế quá hạn đã bị
 // hold khác lấy thì hold_id đã đổi nên không bị nhả nhầm.
+// Nhận mảng hold_ids để reaper nhả ghế của cả lô hold trong một câu lệnh.
 func (q *Queries) ReleaseSeatsByHolds(ctx context.Context, holdIds []uuid.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, releaseSeatsByHolds, holdIds)
 	if err != nil {
@@ -187,6 +197,7 @@ WHERE s.event_id = t.event_id
 `
 
 // held -> sold. Service so số dòng với số ghế của hold; thiếu nghĩa là đã có ghế bị lấy mất.
+// Giữ nguyên hold_id trên ghế đã bán để biết ghế thuộc đơn nào (CHECK constraint bắt buộc).
 func (q *Queries) SellSeatsByHold(ctx context.Context, holdID uuid.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, sellSeatsByHold, holdID)
 	if err != nil {

@@ -1,7 +1,15 @@
+// go.mod khai báo module Go (tương tự package.json). Quản lý bằng lệnh go, ví dụ:
+//   go get github.com/x/y@v1.2.3   thêm/nâng cấp dependency
+//   go mod tidy                     thêm dependency còn thiếu, xóa cái không dùng
+// go.sum (đi kèm) lưu checksum của dependency, giống package-lock.json; luôn commit cả hai.
+
+// Đường dẫn module: tiền tố cho mọi import nội bộ, vd ".../inventory/internal/service".
 module github.com/tmtuan04/ticketing/inventory
 
+// Phiên bản Go tối thiểu (code dùng tính năng mới như sync.WaitGroup.Go của Go 1.25).
 go 1.27.0
 
+// Dependency dùng trực tiếp trong code.
 require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
@@ -14,6 +22,7 @@ require (
 	google.golang.org/protobuf v1.36.12
 )
 
+// "// indirect": dependency của dependency, Go tự quản lý, không cần quan tâm.
 require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
@@ -73,4 +82,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
 )
 
+// Code sinh từ .proto nằm ở gen/go trong cùng repo (chưa publish lên đâu cả): replace trỏ
+// module đó về thư mục local thay vì tải từ internet.
 replace github.com/tmtuan04/ticketing/gen/go => ../../gen/go
