@@ -125,6 +125,8 @@ inbox(message_id PK, processed_at)                           -- consumer idempot
 
 **Ràng buộc:** TTL của hold phải **lớn hơn** payment deadline cộng một khoảng đệm. Khi tạo order sẽ gọi gia hạn hold, thêm RPC `ExtendHold` vào inventory.
 
+**Trạng thái M4 (đang làm):** xong M4.1 (`order.proto`, `inventory.ExtendHold`), M4.2 (`ExtendHold` chỉ kéo dài, chặn bởi `MAX_HOLD_EXTENSION` 15m; Redis chỉ `PEXPIREAT` key còn thuộc hold, không tạo lại key đã mất) và M4.3 (order service cổng 50053: `CreateOrder` = GetHold → tính tiền từ catalog → ExtendHold(`PAYMENT_TIMEOUT` 10m + `HOLD_BUFFER` 2m) → 1 transaction ghi `orders` + `order_saga_log` + `outbox`; `GetOrder`; chép `x-request-id` xuống inventory/catalog). Khác plan: (1) bỏ bảng `idempotency_keys`, idempotency bằng `UNIQUE(user_id, idempotency_key)` trên `orders` và `order_id` = UUID v5 từ (user, key), giống holds của inventory; (2) `amount` do order tính từ giá vé của catalog, không nhận từ client. Còn lại: M4.4 relay, M4.5 route gateway.
+
 ### 2.2 Transactional Outbox + consumer (dùng chung pattern cho Go và Nest)
 - **Relay:** poll `SELECT ... WHERE published_at IS NULL ORDER BY id LIMIT 100 FOR UPDATE SKIP LOCKED`, publish lên Redpanda với key = `order_id` để giữ thứ tự theo đơn, sau đó set `published_at`. Đảm bảo at-least-once.
 - **Consumer:** trong cùng transaction nghiệp vụ, insert `inbox(message_id)`; nếu trùng thì bỏ qua (exactly-once về mặt hiệu ứng).

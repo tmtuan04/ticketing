@@ -1,0 +1,41 @@
+# Cấu hình sqlc: công cụ đọc file .sql và sinh code Go type-safe để chạy các câu SQL đó.
+# Khác ORM (TypeORM/Prisma): ta tự viết SQL, sqlc chỉ sinh hàm Go + struct tương ứng, và báo lỗi
+# ngay lúc generate nếu SQL sai cột/sai kiểu.
+# Chạy: make sqlc (dùng Docker, không cần cài sqlc). Xem thêm internal/repo/doc.go.
+version: "2"
+sql:
+  - engine: postgresql
+    # sqlc đọc thẳng migration của golang-migrate, tự bỏ qua file *.down.sql
+    schema: migrations
+    queries: queries # thư mục chứa các file -- name: ...
+    gen:
+      go:
+        package: repo
+        out: internal/repo # thư mục ghi code sinh ra
+        sql_package: pgx/v5 # dùng driver pgx v5 (thay vì database/sql chuẩn)
+        emit_interface: true # sinh thêm interface Querier (querier.go)
+        emit_empty_slices: true # query :many không có dòng nào trả về [] thay vì nil
+        overrides:
+          # Mặc định pgx/v5 sinh pgtype.UUID / pgtype.Timestamptz; đổi sang kiểu chuẩn cho dễ dùng
+          - db_type: uuid
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+          # Cột uuid cho phép NULL -> *uuid.UUID (con trỏ; nil = NULL)
+          - db_type: uuid
+            nullable: true
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+              pointer: true
+          - db_type: timestamptz
+            go_type:
+              import: time
+              type: Time
+          # Cột timestamptz cho phép NULL -> *time.Time
+          - db_type: timestamptz
+            nullable: true
+            go_type:
+              import: time
+              type: Time
+              pointer: true

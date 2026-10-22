@@ -76,6 +76,35 @@ services:
       redis: { condition: service_healthy }
       inventory-migrate: { condition: service_completed_successfully }
 
+  order-migrate:
+    image: migrate/migrate:v4.18.1
+    volumes:
+      - ../services/order/migrations:/migrations:ro
+    command: ["-path", "/migrations", "-database", "postgres://app:app@postgres:5432/order_db?sslmode=disable", "up"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  order:
+    build:
+      context: ..
+      dockerfile: services/order/Dockerfile
+    environment:
+      GRPC_ADDR: ":50053"
+      DATABASE_URL: postgres://app:app@postgres:5432/order_db?sslmode=disable
+      INVENTORY_GRPC_URL: inventory:50051
+      CATALOG_GRPC_URL: catalog:50052
+      # PAYMENT_TIMEOUT + HOLD_BUFFER phải <= MAX_HOLD_EXTENSION của inventory (mặc định 15m)
+      PAYMENT_TIMEOUT: 10m
+      HOLD_BUFFER: 2m
+    ports: ["50053:50053"]
+    healthcheck:
+      test: ["CMD", "/order", "healthcheck"]
+      interval: 5s
+      retries: 10
+    depends_on:
+      postgres: { condition: service_healthy }
+      order-migrate: { condition: service_completed_successfully }
+
   catalog-migrate:
     build:
       context: ..
