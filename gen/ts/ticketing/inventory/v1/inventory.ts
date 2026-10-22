@@ -8,6 +8,7 @@
 import type { Metadata } from "@grpc/grpc-js";
 import { GrpcMethod, GrpcStreamMethod } from "@nestjs/microservices";
 import { Observable } from "rxjs";
+import { Duration } from "../../../google/protobuf/duration";
 import { Timestamp } from "../../../google/protobuf/timestamp";
 
 export const protobufPackage = "ticketing.inventory.v1";
@@ -88,6 +89,21 @@ export interface ConfirmHoldResponse {
   hold: Hold | undefined;
 }
 
+export interface ExtendHoldRequest {
+  holdId: string;
+  /** Hold phải thuộc về user này, ngược lại trả PERMISSION_DENIED. */
+  userId: string;
+  /**
+   * Hạn mới = now + ttl. Chỉ kéo dài, không rút ngắn: nếu hạn hiện tại đã xa hơn thì giữ nguyên.
+   * Inventory chặn ttl quá lớn (INVALID_ARGUMENT). Hold không còn active/đã hết hạn: FAILED_PRECONDITION.
+   */
+  ttl: Duration | undefined;
+}
+
+export interface ExtendHoldResponse {
+  hold: Hold | undefined;
+}
+
 export interface GetHoldRequest {
   holdId: string;
 }
@@ -124,6 +140,10 @@ export interface InventoryServiceClient {
   /** held -> sold. Chỉ thành công khi hold còn hạn. */
 
   confirmHold(request: ConfirmHoldRequest, metadata?: Metadata): Observable<ConfirmHoldResponse>;
+
+  /** Order gọi khi tạo đơn, để hold sống lâu hơn hạn thanh toán (Phase 2). */
+
+  extendHold(request: ExtendHoldRequest, metadata?: Metadata): Observable<ExtendHoldResponse>;
 
   getHold(request: GetHoldRequest, metadata?: Metadata): Observable<GetHoldResponse>;
 
@@ -166,6 +186,13 @@ export interface InventoryServiceController {
     metadata?: Metadata,
   ): Promise<ConfirmHoldResponse> | Observable<ConfirmHoldResponse> | ConfirmHoldResponse;
 
+  /** Order gọi khi tạo đơn, để hold sống lâu hơn hạn thanh toán (Phase 2). */
+
+  extendHold(
+    request: ExtendHoldRequest,
+    metadata?: Metadata,
+  ): Promise<ExtendHoldResponse> | Observable<ExtendHoldResponse> | ExtendHoldResponse;
+
   getHold(
     request: GetHoldRequest,
     metadata?: Metadata,
@@ -186,6 +213,7 @@ export function InventoryServiceControllerMethods() {
       "holdSeats",
       "releaseHold",
       "confirmHold",
+      "extendHold",
       "getHold",
       "listSeatAvailability",
     ];

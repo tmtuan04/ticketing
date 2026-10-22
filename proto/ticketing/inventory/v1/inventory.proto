@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package ticketing.inventory.v1;
 
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 // InventoryService quản lý trạng thái ghế của từng event: giữ, nhả, xác nhận bán.
@@ -14,6 +15,8 @@ service InventoryService {
   rpc ReleaseHold(ReleaseHoldRequest) returns (ReleaseHoldResponse);
   // held -> sold. Chỉ thành công khi hold còn hạn.
   rpc ConfirmHold(ConfirmHoldRequest) returns (ConfirmHoldResponse);
+  // Order gọi khi tạo đơn, để hold sống lâu hơn hạn thanh toán (Phase 2).
+  rpc ExtendHold(ExtendHoldRequest) returns (ExtendHoldResponse);
   rpc GetHold(GetHoldRequest) returns (GetHoldResponse);
   // Trạng thái từng ghế, để vẽ sơ đồ ghế.
   rpc ListSeatAvailability(ListSeatAvailabilityRequest) returns (ListSeatAvailabilityResponse);
@@ -93,6 +96,19 @@ message ConfirmHoldRequest {
 }
 
 message ConfirmHoldResponse {
+  Hold hold = 1;
+}
+
+message ExtendHoldRequest {
+  string hold_id = 1;
+  // Hold phải thuộc về user này, ngược lại trả PERMISSION_DENIED.
+  string user_id = 2;
+  // Hạn mới = now + ttl. Chỉ kéo dài, không rút ngắn: nếu hạn hiện tại đã xa hơn thì giữ nguyên.
+  // Inventory chặn ttl quá lớn (INVALID_ARGUMENT). Hold không còn active/đã hết hạn: FAILED_PRECONDITION.
+  google.protobuf.Duration ttl = 3;
+}
+
+message ExtendHoldResponse {
   Hold hold = 1;
 }
 

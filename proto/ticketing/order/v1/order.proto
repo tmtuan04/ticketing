@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package ticketing.order.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// OrderService tạo đơn từ một hold và điều phối Saga thanh toán (Phase 2).
+// Gateway gọi đồng bộ; các bước sau khi tạo đơn chạy bất đồng bộ qua Redpanda.
+service OrderService {
+  // Kiểm tra hold (đúng user, còn active), gia hạn hold qua inventory.ExtendHold, tính tiền theo giá
+  // vé của catalog, rồi ghi order + outbox `payment.requested` trong cùng một transaction.
+  // Trùng idempotency_key thì trả lại order cũ. Mỗi hold chỉ có một order: hold đã có order với
+  // key khác => ALREADY_EXISTS. Hold không còn active/đã hết hạn => FAILED_PRECONDITION.
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+}
+
+// Máy trạng thái của Saga:
+//   PENDING -> AWAITING_PAYMENT -> PAID -> CONFIRMED
+//   AWAITING_PAYMENT -> CANCELLED              (thanh toán lỗi hoặc quá payment_deadline)
+//   PAID -> REFUNDING -> REFUNDED              (đã trả tiền nhưng không xác nhận được ghế)
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_PENDING = 1;
+  ORDER_STATUS_AWAITING_PAYMENT = 2;
+  ORDER_STATUS_PAID = 3;
+  ORDER_STATUS_CONFIRMED = 4;
+  ORDER_STATUS_CANCELLED = 5;
+  ORDER_STATUS_REFUNDING = 6;
+  ORDER_STATUS_REFUNDED = 7;
+}
+
+message Order {
+  string id = 1;
+  string user_id = 2;
+  string event_id = 3;
+  string hold_id = 4;
+  repeated string seat_ids = 5;
+  int64 amount = 6; // đơn vị nhỏ nhất (VND: đồng), tổng giá các ghế lúc tạo đơn
+  string currency = 7; // "VND"
+  OrderStatus status = 8;
+  // Quá hạn mà chưa thanh toán thì order bị hủy và ghế được nhả.
+  google.protobuf.Timestamp payment_deadline = 9;
+  // Lý do CANCELLED/REFUNDED, rỗng ở các trạng thái khác. Vd "payment_failed", "payment_timeout".
+  string failure_reason = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+message CreateOrderRequest {
+  string user_id = 1;
+  string hold_id = 2;
+  string idempotency_key = 3;
+}
+
+message CreateOrderResponse {
+  Order order = 1;
+}
+
+message GetOrderRequest {
+  string order_id = 1;
+}
+
+message GetOrderResponse {
+  Order order = 1;
+}

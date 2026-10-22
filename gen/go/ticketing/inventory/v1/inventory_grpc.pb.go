@@ -23,6 +23,7 @@ const (
 	InventoryService_HoldSeats_FullMethodName            = "/ticketing.inventory.v1.InventoryService/HoldSeats"
 	InventoryService_ReleaseHold_FullMethodName          = "/ticketing.inventory.v1.InventoryService/ReleaseHold"
 	InventoryService_ConfirmHold_FullMethodName          = "/ticketing.inventory.v1.InventoryService/ConfirmHold"
+	InventoryService_ExtendHold_FullMethodName           = "/ticketing.inventory.v1.InventoryService/ExtendHold"
 	InventoryService_GetHold_FullMethodName              = "/ticketing.inventory.v1.InventoryService/GetHold"
 	InventoryService_ListSeatAvailability_FullMethodName = "/ticketing.inventory.v1.InventoryService/ListSeatAvailability"
 )
@@ -41,6 +42,8 @@ type InventoryServiceClient interface {
 	ReleaseHold(ctx context.Context, in *ReleaseHoldRequest, opts ...grpc.CallOption) (*ReleaseHoldResponse, error)
 	// held -> sold. Chỉ thành công khi hold còn hạn.
 	ConfirmHold(ctx context.Context, in *ConfirmHoldRequest, opts ...grpc.CallOption) (*ConfirmHoldResponse, error)
+	// Order gọi khi tạo đơn, để hold sống lâu hơn hạn thanh toán (Phase 2).
+	ExtendHold(ctx context.Context, in *ExtendHoldRequest, opts ...grpc.CallOption) (*ExtendHoldResponse, error)
 	GetHold(ctx context.Context, in *GetHoldRequest, opts ...grpc.CallOption) (*GetHoldResponse, error)
 	// Trạng thái từng ghế, để vẽ sơ đồ ghế.
 	ListSeatAvailability(ctx context.Context, in *ListSeatAvailabilityRequest, opts ...grpc.CallOption) (*ListSeatAvailabilityResponse, error)
@@ -94,6 +97,16 @@ func (c *inventoryServiceClient) ConfirmHold(ctx context.Context, in *ConfirmHol
 	return out, nil
 }
 
+func (c *inventoryServiceClient) ExtendHold(ctx context.Context, in *ExtendHoldRequest, opts ...grpc.CallOption) (*ExtendHoldResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExtendHoldResponse)
+	err := c.cc.Invoke(ctx, InventoryService_ExtendHold_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *inventoryServiceClient) GetHold(ctx context.Context, in *GetHoldRequest, opts ...grpc.CallOption) (*GetHoldResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetHoldResponse)
@@ -128,6 +141,8 @@ type InventoryServiceServer interface {
 	ReleaseHold(context.Context, *ReleaseHoldRequest) (*ReleaseHoldResponse, error)
 	// held -> sold. Chỉ thành công khi hold còn hạn.
 	ConfirmHold(context.Context, *ConfirmHoldRequest) (*ConfirmHoldResponse, error)
+	// Order gọi khi tạo đơn, để hold sống lâu hơn hạn thanh toán (Phase 2).
+	ExtendHold(context.Context, *ExtendHoldRequest) (*ExtendHoldResponse, error)
 	GetHold(context.Context, *GetHoldRequest) (*GetHoldResponse, error)
 	// Trạng thái từng ghế, để vẽ sơ đồ ghế.
 	ListSeatAvailability(context.Context, *ListSeatAvailabilityRequest) (*ListSeatAvailabilityResponse, error)
@@ -152,6 +167,9 @@ func (UnimplementedInventoryServiceServer) ReleaseHold(context.Context, *Release
 }
 func (UnimplementedInventoryServiceServer) ConfirmHold(context.Context, *ConfirmHoldRequest) (*ConfirmHoldResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ConfirmHold not implemented")
+}
+func (UnimplementedInventoryServiceServer) ExtendHold(context.Context, *ExtendHoldRequest) (*ExtendHoldResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExtendHold not implemented")
 }
 func (UnimplementedInventoryServiceServer) GetHold(context.Context, *GetHoldRequest) (*GetHoldResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetHold not implemented")
@@ -252,6 +270,24 @@ func _InventoryService_ConfirmHold_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InventoryService_ExtendHold_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExtendHoldRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InventoryServiceServer).ExtendHold(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InventoryService_ExtendHold_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InventoryServiceServer).ExtendHold(ctx, req.(*ExtendHoldRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _InventoryService_GetHold_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetHoldRequest)
 	if err := dec(in); err != nil {
@@ -310,6 +346,10 @@ var InventoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ConfirmHold",
 			Handler:    _InventoryService_ConfirmHold_Handler,
+		},
+		{
+			MethodName: "ExtendHold",
+			Handler:    _InventoryService_ExtendHold_Handler,
 		},
 		{
 			MethodName: "GetHold",

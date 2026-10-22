@@ -9,6 +9,7 @@ package inventoryv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -751,6 +752,113 @@ func (x *ConfirmHoldResponse) GetHold() *Hold {
 	return nil
 }
 
+type ExtendHoldRequest struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	HoldId string                 `protobuf:"bytes,1,opt,name=hold_id,json=holdId,proto3" json:"hold_id,omitempty"`
+	// Hold phải thuộc về user này, ngược lại trả PERMISSION_DENIED.
+	UserId string `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// Hạn mới = now + ttl. Chỉ kéo dài, không rút ngắn: nếu hạn hiện tại đã xa hơn thì giữ nguyên.
+	// Inventory chặn ttl quá lớn (INVALID_ARGUMENT). Hold không còn active/đã hết hạn: FAILED_PRECONDITION.
+	Ttl           *durationpb.Duration `protobuf:"bytes,3,opt,name=ttl,proto3" json:"ttl,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExtendHoldRequest) Reset() {
+	*x = ExtendHoldRequest{}
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExtendHoldRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExtendHoldRequest) ProtoMessage() {}
+
+func (x *ExtendHoldRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExtendHoldRequest.ProtoReflect.Descriptor instead.
+func (*ExtendHoldRequest) Descriptor() ([]byte, []int) {
+	return file_ticketing_inventory_v1_inventory_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ExtendHoldRequest) GetHoldId() string {
+	if x != nil {
+		return x.HoldId
+	}
+	return ""
+}
+
+func (x *ExtendHoldRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *ExtendHoldRequest) GetTtl() *durationpb.Duration {
+	if x != nil {
+		return x.Ttl
+	}
+	return nil
+}
+
+type ExtendHoldResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hold          *Hold                  `protobuf:"bytes,1,opt,name=hold,proto3" json:"hold,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExtendHoldResponse) Reset() {
+	*x = ExtendHoldResponse{}
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExtendHoldResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExtendHoldResponse) ProtoMessage() {}
+
+func (x *ExtendHoldResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExtendHoldResponse.ProtoReflect.Descriptor instead.
+func (*ExtendHoldResponse) Descriptor() ([]byte, []int) {
+	return file_ticketing_inventory_v1_inventory_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ExtendHoldResponse) GetHold() *Hold {
+	if x != nil {
+		return x.Hold
+	}
+	return nil
+}
+
 type GetHoldRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	HoldId        string                 `protobuf:"bytes,1,opt,name=hold_id,json=holdId,proto3" json:"hold_id,omitempty"`
@@ -760,7 +868,7 @@ type GetHoldRequest struct {
 
 func (x *GetHoldRequest) Reset() {
 	*x = GetHoldRequest{}
-	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[11]
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -772,7 +880,7 @@ func (x *GetHoldRequest) String() string {
 func (*GetHoldRequest) ProtoMessage() {}
 
 func (x *GetHoldRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[11]
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -785,7 +893,7 @@ func (x *GetHoldRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHoldRequest.ProtoReflect.Descriptor instead.
 func (*GetHoldRequest) Descriptor() ([]byte, []int) {
-	return file_ticketing_inventory_v1_inventory_proto_rawDescGZIP(), []int{11}
+	return file_ticketing_inventory_v1_inventory_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetHoldRequest) GetHoldId() string {
@@ -804,7 +912,7 @@ type GetHoldResponse struct {
 
 func (x *GetHoldResponse) Reset() {
 	*x = GetHoldResponse{}
-	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[12]
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -816,7 +924,7 @@ func (x *GetHoldResponse) String() string {
 func (*GetHoldResponse) ProtoMessage() {}
 
 func (x *GetHoldResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[12]
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -829,7 +937,7 @@ func (x *GetHoldResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHoldResponse.ProtoReflect.Descriptor instead.
 func (*GetHoldResponse) Descriptor() ([]byte, []int) {
-	return file_ticketing_inventory_v1_inventory_proto_rawDescGZIP(), []int{12}
+	return file_ticketing_inventory_v1_inventory_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetHoldResponse) GetHold() *Hold {
@@ -848,7 +956,7 @@ type ListSeatAvailabilityRequest struct {
 
 func (x *ListSeatAvailabilityRequest) Reset() {
 	*x = ListSeatAvailabilityRequest{}
-	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[13]
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -860,7 +968,7 @@ func (x *ListSeatAvailabilityRequest) String() string {
 func (*ListSeatAvailabilityRequest) ProtoMessage() {}
 
 func (x *ListSeatAvailabilityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[13]
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -873,7 +981,7 @@ func (x *ListSeatAvailabilityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSeatAvailabilityRequest.ProtoReflect.Descriptor instead.
 func (*ListSeatAvailabilityRequest) Descriptor() ([]byte, []int) {
-	return file_ticketing_inventory_v1_inventory_proto_rawDescGZIP(), []int{13}
+	return file_ticketing_inventory_v1_inventory_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListSeatAvailabilityRequest) GetEventId() string {
@@ -892,7 +1000,7 @@ type ListSeatAvailabilityResponse struct {
 
 func (x *ListSeatAvailabilityResponse) Reset() {
 	*x = ListSeatAvailabilityResponse{}
-	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[14]
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -904,7 +1012,7 @@ func (x *ListSeatAvailabilityResponse) String() string {
 func (*ListSeatAvailabilityResponse) ProtoMessage() {}
 
 func (x *ListSeatAvailabilityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[14]
+	mi := &file_ticketing_inventory_v1_inventory_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -917,7 +1025,7 @@ func (x *ListSeatAvailabilityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSeatAvailabilityResponse.ProtoReflect.Descriptor instead.
 func (*ListSeatAvailabilityResponse) Descriptor() ([]byte, []int) {
-	return file_ticketing_inventory_v1_inventory_proto_rawDescGZIP(), []int{14}
+	return file_ticketing_inventory_v1_inventory_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListSeatAvailabilityResponse) GetSeats() []*SeatAvailability {
@@ -931,7 +1039,7 @@ var File_ticketing_inventory_v1_inventory_proto protoreflect.FileDescriptor
 
 const file_ticketing_inventory_v1_inventory_proto_rawDesc = "" +
 	"\n" +
-	"&ticketing/inventory/v1/inventory.proto\x12\x16ticketing.inventory.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x97\x02\n" +
+	"&ticketing/inventory/v1/inventory.proto\x12\x16ticketing.inventory.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x97\x02\n" +
 	"\x04Hold\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12\x17\n" +
@@ -970,6 +1078,12 @@ const file_ticketing_inventory_v1_inventory_proto_rawDesc = "" +
 	"\x12ConfirmHoldRequest\x12\x17\n" +
 	"\ahold_id\x18\x01 \x01(\tR\x06holdId\"G\n" +
 	"\x13ConfirmHoldResponse\x120\n" +
+	"\x04hold\x18\x01 \x01(\v2\x1c.ticketing.inventory.v1.HoldR\x04hold\"r\n" +
+	"\x11ExtendHoldRequest\x12\x17\n" +
+	"\ahold_id\x18\x01 \x01(\tR\x06holdId\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12+\n" +
+	"\x03ttl\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x03ttl\"F\n" +
+	"\x12ExtendHoldResponse\x120\n" +
 	"\x04hold\x18\x01 \x01(\v2\x1c.ticketing.inventory.v1.HoldR\x04hold\")\n" +
 	"\x0eGetHoldRequest\x12\x17\n" +
 	"\ahold_id\x18\x01 \x01(\tR\x06holdId\"C\n" +
@@ -991,12 +1105,14 @@ const file_ticketing_inventory_v1_inventory_proto_rawDesc = "" +
 	"\x12HOLD_STATUS_ACTIVE\x10\x01\x12\x18\n" +
 	"\x14HOLD_STATUS_RELEASED\x10\x02\x12\x19\n" +
 	"\x15HOLD_STATUS_CONFIRMED\x10\x03\x12\x17\n" +
-	"\x13HOLD_STATUS_EXPIRED\x10\x042\xa1\x05\n" +
+	"\x13HOLD_STATUS_EXPIRED\x10\x042\x86\x06\n" +
 	"\x10InventoryService\x12{\n" +
 	"\x12InitEventInventory\x121.ticketing.inventory.v1.InitEventInventoryRequest\x1a2.ticketing.inventory.v1.InitEventInventoryResponse\x12`\n" +
 	"\tHoldSeats\x12(.ticketing.inventory.v1.HoldSeatsRequest\x1a).ticketing.inventory.v1.HoldSeatsResponse\x12f\n" +
 	"\vReleaseHold\x12*.ticketing.inventory.v1.ReleaseHoldRequest\x1a+.ticketing.inventory.v1.ReleaseHoldResponse\x12f\n" +
-	"\vConfirmHold\x12*.ticketing.inventory.v1.ConfirmHoldRequest\x1a+.ticketing.inventory.v1.ConfirmHoldResponse\x12Z\n" +
+	"\vConfirmHold\x12*.ticketing.inventory.v1.ConfirmHoldRequest\x1a+.ticketing.inventory.v1.ConfirmHoldResponse\x12c\n" +
+	"\n" +
+	"ExtendHold\x12).ticketing.inventory.v1.ExtendHoldRequest\x1a*.ticketing.inventory.v1.ExtendHoldResponse\x12Z\n" +
 	"\aGetHold\x12&.ticketing.inventory.v1.GetHoldRequest\x1a'.ticketing.inventory.v1.GetHoldResponse\x12\x81\x01\n" +
 	"\x14ListSeatAvailability\x123.ticketing.inventory.v1.ListSeatAvailabilityRequest\x1a4.ticketing.inventory.v1.ListSeatAvailabilityResponseB\xef\x01\n" +
 	"\x1acom.ticketing.inventory.v1B\x0eInventoryProtoP\x01ZGgithub.com/tmtuan04/ticketing/gen/go/ticketing/inventory/v1;inventoryv1\xa2\x02\x03TIX\xaa\x02\x16Ticketing.Inventory.V1\xca\x02\x16Ticketing\\Inventory\\V1\xe2\x02\"Ticketing\\Inventory\\V1\\GPBMetadata\xea\x02\x18Ticketing::Inventory::V1b\x06proto3"
@@ -1014,7 +1130,7 @@ func file_ticketing_inventory_v1_inventory_proto_rawDescGZIP() []byte {
 }
 
 var file_ticketing_inventory_v1_inventory_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_ticketing_inventory_v1_inventory_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_ticketing_inventory_v1_inventory_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_ticketing_inventory_v1_inventory_proto_goTypes = []any{
 	(SeatStatus)(0),                      // 0: ticketing.inventory.v1.SeatStatus
 	(HoldStatus)(0),                      // 1: ticketing.inventory.v1.HoldStatus
@@ -1029,40 +1145,47 @@ var file_ticketing_inventory_v1_inventory_proto_goTypes = []any{
 	(*ReleaseHoldResponse)(nil),          // 10: ticketing.inventory.v1.ReleaseHoldResponse
 	(*ConfirmHoldRequest)(nil),           // 11: ticketing.inventory.v1.ConfirmHoldRequest
 	(*ConfirmHoldResponse)(nil),          // 12: ticketing.inventory.v1.ConfirmHoldResponse
-	(*GetHoldRequest)(nil),               // 13: ticketing.inventory.v1.GetHoldRequest
-	(*GetHoldResponse)(nil),              // 14: ticketing.inventory.v1.GetHoldResponse
-	(*ListSeatAvailabilityRequest)(nil),  // 15: ticketing.inventory.v1.ListSeatAvailabilityRequest
-	(*ListSeatAvailabilityResponse)(nil), // 16: ticketing.inventory.v1.ListSeatAvailabilityResponse
-	(*timestamppb.Timestamp)(nil),        // 17: google.protobuf.Timestamp
+	(*ExtendHoldRequest)(nil),            // 13: ticketing.inventory.v1.ExtendHoldRequest
+	(*ExtendHoldResponse)(nil),           // 14: ticketing.inventory.v1.ExtendHoldResponse
+	(*GetHoldRequest)(nil),               // 15: ticketing.inventory.v1.GetHoldRequest
+	(*GetHoldResponse)(nil),              // 16: ticketing.inventory.v1.GetHoldResponse
+	(*ListSeatAvailabilityRequest)(nil),  // 17: ticketing.inventory.v1.ListSeatAvailabilityRequest
+	(*ListSeatAvailabilityResponse)(nil), // 18: ticketing.inventory.v1.ListSeatAvailabilityResponse
+	(*timestamppb.Timestamp)(nil),        // 19: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),          // 20: google.protobuf.Duration
 }
 var file_ticketing_inventory_v1_inventory_proto_depIdxs = []int32{
 	1,  // 0: ticketing.inventory.v1.Hold.status:type_name -> ticketing.inventory.v1.HoldStatus
-	17, // 1: ticketing.inventory.v1.Hold.expires_at:type_name -> google.protobuf.Timestamp
-	17, // 2: ticketing.inventory.v1.Hold.created_at:type_name -> google.protobuf.Timestamp
+	19, // 1: ticketing.inventory.v1.Hold.expires_at:type_name -> google.protobuf.Timestamp
+	19, // 2: ticketing.inventory.v1.Hold.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 3: ticketing.inventory.v1.SeatAvailability.status:type_name -> ticketing.inventory.v1.SeatStatus
 	2,  // 4: ticketing.inventory.v1.HoldSeatsResponse.hold:type_name -> ticketing.inventory.v1.Hold
 	4,  // 5: ticketing.inventory.v1.HoldSeatsResponse.unavailable:type_name -> ticketing.inventory.v1.SeatsUnavailable
 	2,  // 6: ticketing.inventory.v1.ReleaseHoldResponse.hold:type_name -> ticketing.inventory.v1.Hold
 	2,  // 7: ticketing.inventory.v1.ConfirmHoldResponse.hold:type_name -> ticketing.inventory.v1.Hold
-	2,  // 8: ticketing.inventory.v1.GetHoldResponse.hold:type_name -> ticketing.inventory.v1.Hold
-	3,  // 9: ticketing.inventory.v1.ListSeatAvailabilityResponse.seats:type_name -> ticketing.inventory.v1.SeatAvailability
-	5,  // 10: ticketing.inventory.v1.InventoryService.InitEventInventory:input_type -> ticketing.inventory.v1.InitEventInventoryRequest
-	7,  // 11: ticketing.inventory.v1.InventoryService.HoldSeats:input_type -> ticketing.inventory.v1.HoldSeatsRequest
-	9,  // 12: ticketing.inventory.v1.InventoryService.ReleaseHold:input_type -> ticketing.inventory.v1.ReleaseHoldRequest
-	11, // 13: ticketing.inventory.v1.InventoryService.ConfirmHold:input_type -> ticketing.inventory.v1.ConfirmHoldRequest
-	13, // 14: ticketing.inventory.v1.InventoryService.GetHold:input_type -> ticketing.inventory.v1.GetHoldRequest
-	15, // 15: ticketing.inventory.v1.InventoryService.ListSeatAvailability:input_type -> ticketing.inventory.v1.ListSeatAvailabilityRequest
-	6,  // 16: ticketing.inventory.v1.InventoryService.InitEventInventory:output_type -> ticketing.inventory.v1.InitEventInventoryResponse
-	8,  // 17: ticketing.inventory.v1.InventoryService.HoldSeats:output_type -> ticketing.inventory.v1.HoldSeatsResponse
-	10, // 18: ticketing.inventory.v1.InventoryService.ReleaseHold:output_type -> ticketing.inventory.v1.ReleaseHoldResponse
-	12, // 19: ticketing.inventory.v1.InventoryService.ConfirmHold:output_type -> ticketing.inventory.v1.ConfirmHoldResponse
-	14, // 20: ticketing.inventory.v1.InventoryService.GetHold:output_type -> ticketing.inventory.v1.GetHoldResponse
-	16, // 21: ticketing.inventory.v1.InventoryService.ListSeatAvailability:output_type -> ticketing.inventory.v1.ListSeatAvailabilityResponse
-	16, // [16:22] is the sub-list for method output_type
-	10, // [10:16] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	20, // 8: ticketing.inventory.v1.ExtendHoldRequest.ttl:type_name -> google.protobuf.Duration
+	2,  // 9: ticketing.inventory.v1.ExtendHoldResponse.hold:type_name -> ticketing.inventory.v1.Hold
+	2,  // 10: ticketing.inventory.v1.GetHoldResponse.hold:type_name -> ticketing.inventory.v1.Hold
+	3,  // 11: ticketing.inventory.v1.ListSeatAvailabilityResponse.seats:type_name -> ticketing.inventory.v1.SeatAvailability
+	5,  // 12: ticketing.inventory.v1.InventoryService.InitEventInventory:input_type -> ticketing.inventory.v1.InitEventInventoryRequest
+	7,  // 13: ticketing.inventory.v1.InventoryService.HoldSeats:input_type -> ticketing.inventory.v1.HoldSeatsRequest
+	9,  // 14: ticketing.inventory.v1.InventoryService.ReleaseHold:input_type -> ticketing.inventory.v1.ReleaseHoldRequest
+	11, // 15: ticketing.inventory.v1.InventoryService.ConfirmHold:input_type -> ticketing.inventory.v1.ConfirmHoldRequest
+	13, // 16: ticketing.inventory.v1.InventoryService.ExtendHold:input_type -> ticketing.inventory.v1.ExtendHoldRequest
+	15, // 17: ticketing.inventory.v1.InventoryService.GetHold:input_type -> ticketing.inventory.v1.GetHoldRequest
+	17, // 18: ticketing.inventory.v1.InventoryService.ListSeatAvailability:input_type -> ticketing.inventory.v1.ListSeatAvailabilityRequest
+	6,  // 19: ticketing.inventory.v1.InventoryService.InitEventInventory:output_type -> ticketing.inventory.v1.InitEventInventoryResponse
+	8,  // 20: ticketing.inventory.v1.InventoryService.HoldSeats:output_type -> ticketing.inventory.v1.HoldSeatsResponse
+	10, // 21: ticketing.inventory.v1.InventoryService.ReleaseHold:output_type -> ticketing.inventory.v1.ReleaseHoldResponse
+	12, // 22: ticketing.inventory.v1.InventoryService.ConfirmHold:output_type -> ticketing.inventory.v1.ConfirmHoldResponse
+	14, // 23: ticketing.inventory.v1.InventoryService.ExtendHold:output_type -> ticketing.inventory.v1.ExtendHoldResponse
+	16, // 24: ticketing.inventory.v1.InventoryService.GetHold:output_type -> ticketing.inventory.v1.GetHoldResponse
+	18, // 25: ticketing.inventory.v1.InventoryService.ListSeatAvailability:output_type -> ticketing.inventory.v1.ListSeatAvailabilityResponse
+	19, // [19:26] is the sub-list for method output_type
+	12, // [12:19] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_ticketing_inventory_v1_inventory_proto_init() }
@@ -1080,7 +1203,7 @@ func file_ticketing_inventory_v1_inventory_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ticketing_inventory_v1_inventory_proto_rawDesc), len(file_ticketing_inventory_v1_inventory_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
