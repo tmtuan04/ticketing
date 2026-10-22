@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -18,6 +20,10 @@ type Config struct {
 	PaymentTimeout   time.Duration // thời gian user có để trả tiền
 	HoldBuffer       time.Duration // hold sống thêm bấy nhiêu sau payment deadline
 	CallTimeout      time.Duration // deadline mỗi lời gọi gRPC xuống inventory/catalog
+	KafkaBrokers     []string      // địa chỉ Redpanda, vd ["redpanda:9092"]
+	DeliveryTimeout  time.Duration // quá thời gian này chưa publish được thì relay ROLLBACK và thử lại
+	OutboxInterval   time.Duration // chu kỳ relay quét outbox
+	OutboxBatchSize  int32         // số message tối đa mỗi transaction của relay
 	LogLevel         slog.Level
 }
 
@@ -32,6 +38,10 @@ func Load() (Config, error) {
 	c.PaymentTimeout = duration("PAYMENT_TIMEOUT", 10*time.Minute, &errs)
 	c.HoldBuffer = duration("HOLD_BUFFER", 2*time.Minute, &errs)
 	c.CallTimeout = duration("GRPC_CALL_TIMEOUT", 3*time.Second, &errs)
+	c.KafkaBrokers = strings.Split(env("KAFKA_BROKERS", "localhost:19092"), ",")
+	c.DeliveryTimeout = duration("KAFKA_DELIVERY_TIMEOUT", 5*time.Second, &errs)
+	c.OutboxInterval = duration("OUTBOX_POLL_INTERVAL", 500*time.Millisecond, &errs)
+	c.OutboxBatchSize = int32(integer("OUTBOX_BATCH_SIZE", 100, &errs))
 	if err := c.LogLevel.UnmarshalText([]byte(env("LOG_LEVEL", "info"))); err != nil {
 		errs = append(errs, fmt.Errorf("LOG_LEVEL: %w", err))
 	}
@@ -59,4 +69,17 @@ func duration(key string, def time.Duration, errs *[]error) time.Duration {
 		return def
 	}
 	return d
+}
+
+func integer(key string, def int, errs *[]error) int {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		*errs = append(*errs, fmt.Errorf("%s: must be a positive integer, got %q", key, v))
+		return def
+	}
+	return n
 }

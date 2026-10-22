@@ -21,6 +21,11 @@ type Querier interface {
 	// Luôn gọi bên trong transaction nghiệp vụ (cùng tx với thay đổi của orders).
 	InsertOutbox(ctx context.Context, arg InsertOutboxParams) error
 	InsertSagaLog(ctx context.Context, arg InsertSagaLogParams) error
+	// Relay: khóa một lô message chưa publish, cũ nhất trước. SKIP LOCKED: nhiều relay (nhiều
+	// replica order) chạy song song thì mỗi relay lấy một lô khác nhau, không publish trùng và không
+	// đứng chờ nhau. Khóa giữ tới khi transaction của relay COMMIT (sau khi đã publish xong).
+	LockUnpublished(ctx context.Context, batchSize int32) ([]LockUnpublishedRow, error)
+	MarkPublished(ctx context.Context, ids []int64) error
 }
 
 var _ Querier = (*Queries)(nil)

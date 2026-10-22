@@ -7,6 +7,7 @@ package repo
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -35,5 +36,66 @@ func (q *Queries) InsertOutbox(ctx context.Context, arg InsertOutboxParams) erro
 		arg.Type,
 		arg.Payload,
 	)
+	return err
+}
+
+const lockUnpublished = `-- name: LockUnpublished :many
+SELECT id, message_id, topic, key, type, payload, created_at
+FROM outbox
+WHERE published_at IS NULL
+ORDER BY id
+LIMIT $1
+FOR UPDATE SKIP LOCKED
+`
+
+type LockUnpublishedRow struct {
+	ID        int64
+	MessageID uuid.UUID
+	Topic     string
+	Key       string
+	Type      string
+	Payload   []byte
+	CreatedAt time.Time
+}
+
+// Relay: khóa một lô message chưa publish, cũ nhất trước. SKIP LOCKED: nhiều relay (nhiều
+// replica order) chạy song song thì mỗi relay lấy một lô khác nhau, không publish trùng và không
+// đứng chờ nhau. Khóa giữ tới khi transaction của relay COMMIT (sau khi đã publish xong).
+func (q *Queries) LockUnpublished(ctx context.Context, batchSize int32) ([]LockUnpublishedRow, error) {
+	rows, err := q.db.Query(ctx, lockUnpublished, batchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockUnpublishedRow{}
+	for rows.Next() {
+		var i LockUnpublishedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MessageID,
+			&i.Topic,
+			&i.Key,
+			&i.Type,
+			&i.Payload,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markPublished = `-- name: MarkPublished :exec
+UPDATE outbox
+SET published_at = now()
+WHERE id = ANY ($1::bigint[])
+`
+
+func (q *Queries) MarkPublished(ctx context.Context, ids []int64) error {
+	_, err := q.db.Exec(ctx, markPublished, ids)
 	return err
 }

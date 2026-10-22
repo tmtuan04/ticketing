@@ -1,5 +1,5 @@
 // Điểm khởi động của order service: đọc config, mở Postgres, kết nối gRPC tới inventory và
-// catalog, dựng gRPC server rồi chờ tín hiệu tắt. Cấu trúc giống hệt inventory/cmd/server
+// catalog, dựng gRPC server, chạy outbox relay nền rồi chờ tín hiệu tắt. Cấu trúc giống hệt inventory/cmd/server
 // (xem các ghi chú [Go] bên đó); ở đây chỉ chú thích phần khác.
 package main
 
@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	orderv1 "github.com/tmtuan04/ticketing/gen/go/ticketing/order/v1"
 	"github.com/tmtuan04/ticketing/order/internal/config"
 	"github.com/tmtuan04/ticketing/order/internal/grpcserver"
+	"github.com/tmtuan04/ticketing/order/internal/outbox"
 	"github.com/tmtuan04/ticketing/order/internal/service"
 )
 
@@ -92,6 +94,17 @@ func run() error {
 	healthpb.RegisterHealthServer(srv, hs)
 	reflection.Register(srv)
 
+	// Kafka client cho relay. Giống grpc.NewClient: không kết nối ngay, Redpanda chưa lên thì relay
+	// chỉ backoff rồi thử lại, order vẫn nhận CreateOrder (message nằm chờ trong outbox).
+	producer, err := outbox.NewProducer(cfg.KafkaBrokers, cfg.DeliveryTimeout)
+	if err != nil {
+		return fmt.Errorf("kafka: %w", err)
+	}
+	defer producer.Close()
+
+	var wg sync.WaitGroup
+	wg.Go(func() { outbox.New(pool, producer, cfg.OutboxInterval, cfg.OutboxBatchSize, log).Run(ctx) })
+
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(lis) }()
 	log.Info("order listening", "addr", lis.Addr().String(),
@@ -100,6 +113,8 @@ func run() error {
 	select {
 	case <-ctx.Done():
 	case err := <-serveErr:
+		stop()
+		wg.Wait()
 		return fmt.Errorf("grpc serve: %w", err)
 	}
 
@@ -116,6 +131,9 @@ func run() error {
 		log.Warn("graceful stop timed out, forcing")
 		srv.Stop()
 	}
+	// Chờ relay dừng (lô đang dở bị ROLLBACK, lần chạy sau publish lại) trước khi các defer đóng
+	// producer và pool.
+	wg.Wait()
 	return nil
 }
 
