@@ -9,6 +9,7 @@ import { AppExceptionFilter } from './common/grpc-errors';
 import { APP_CONFIG, AppConfigModule, type AppConfig } from './config';
 import { HealthController } from './health/health.controller';
 import { InventoryModule } from './inventory/inventory.module';
+import { OrderModule } from './order/order.module';
 import { PrismaModule } from './prisma/prisma.service';
 import { AppThrottlerGuard } from './throttle/app-throttler.guard';
 import { REDIS, RedisModule } from './throttle/redis.module';
@@ -33,6 +34,7 @@ export class AppModule {
         AuthModule,
         InventoryModule,
         CatalogModule,
+        OrderModule,
       ],
       controllers: [HealthController],
       providers: [

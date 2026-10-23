@@ -27,6 +27,7 @@ export async function createApp(env: Record<string, string> = {}, controllers: T
     RATE_LIMIT_DEFAULT: '10000',
     RATE_LIMIT_AUTH: '10000',
     RATE_LIMIT_HOLD: '10000',
+    RATE_LIMIT_ORDER: '10000',
     ...env,
   });
   const moduleRef = await Test.createTestingModule({
@@ -76,6 +77,10 @@ export interface RecordedCall {
 /** InventoryService giả, xem startFakeGrpc. */
 export const startFakeInventory = () =>
   startFakeGrpc('ticketing/inventory/v1/inventory.proto', 'ticketing.inventory.v1', ['InventoryService']);
+
+/** OrderService giả, xem startFakeGrpc. */
+export const startFakeOrder = () =>
+  startFakeGrpc('ticketing/order/v1/order.proto', 'ticketing.order.v1', ['OrderService']);
 
 /** CatalogService + CatalogAdminService giả trên cùng một server, xem startFakeGrpc. */
 export const startFakeCatalog = () =>

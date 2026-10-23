@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 // Cấu hình đọc từ biến môi trường, giá trị mặc định dùng cho chạy local với `make up`.
 // Lỗi được gom lại và báo một lần lúc khởi động (giống config.go của inventory).
 
-export type RateLimitBucket = 'auth' | 'hold';
+export type RateLimitBucket = 'auth' | 'hold' | 'order';
 
 export interface AppConfig {
   port: number;
@@ -12,6 +12,7 @@ export interface AppConfig {
   redisUrl: string;
   inventoryGrpcUrl: string;
   catalogGrpcUrl: string;
+  orderGrpcUrl: string;
   grpcTimeoutMs: number;
   protoDir: string;
   /** giá trị cho express `trust proxy`: false, số hop, hoặc danh sách subnet */
@@ -87,6 +88,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     redisUrl: str('REDIS_URL', 'redis://localhost:6379'),
     inventoryGrpcUrl: str('INVENTORY_GRPC_URL', 'localhost:50051'),
     catalogGrpcUrl: str('CATALOG_GRPC_URL', 'localhost:50052'),
+    orderGrpcUrl: str('ORDER_GRPC_URL', 'localhost:50053'),
     grpcTimeoutMs: dur('GRPC_TIMEOUT', '3s'),
     protoDir: resolve(str('PROTO_DIR', '../../proto')),
     trustProxy: parseTrustProxy(str('TRUST_PROXY', 'false')),
@@ -100,6 +102,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       default: int('RATE_LIMIT_DEFAULT', 120),
       auth: int('RATE_LIMIT_AUTH', 10),
       hold: int('RATE_LIMIT_HOLD', 10),
+      order: int('RATE_LIMIT_ORDER', 10),
     },
     admin: adminEmail && adminPassword ? { email: adminEmail, password: adminPassword } : undefined,
     logLevels: LOG_LEVELS[logLevel] ?? LOG_LEVELS.info,

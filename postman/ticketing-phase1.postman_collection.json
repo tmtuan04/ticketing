@@ -1,15 +1,30 @@
 {
   "info": {
-    "name": "Ticketing - Phase 1 (auth, catalog, holds)",
-    "description": "Luồng end-to-end Phase 1 qua gateway trên stack thật (`make up`).\n\nMỗi lần chạy tạo user/event mới nên chạy lại được nhiều lần. Lưu ý rate limit auth mặc định 10 request/phút/IP: collection dùng 8, chạy lại liền nhau thì chờ 1 phút.\n\nFolder `5. Expiry` chờ hold hết hạn rồi kiểm tra reaper; chỉ chạy khi thời gian chờ <= `maxWaitSec`, nên cần dựng stack với HOLD_TTL ngắn (vd `HOLD_TTL=15s make up`), nếu không folder này bị bỏ qua.",
+    "name": "Ticketing - e2e (auth, catalog, holds, orders)",
+    "description": "Luồng end-to-end qua gateway trên stack thật (`make up`): Phase 1 + tạo đơn (M4).\n\nMỗi lần chạy tạo user/event mới nên chạy lại được nhiều lần. Lưu ý rate limit auth mặc định 10 request/phút/IP: collection dùng 8, chạy lại liền nhau thì chờ 1 phút.\n\nFolder `6. Expiry` chờ hold hết hạn rồi kiểm tra reaper; chỉ chạy khi thời gian chờ <= `maxWaitSec`, nên cần dựng stack với HOLD_TTL ngắn (vd `HOLD_TTL=15s make up`), nếu không folder này bị bỏ qua.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3000" },
-    { "key": "adminEmail", "value": "admin@ticketing.local" },
-    { "key": "adminPassword", "value": "admin12345" },
-    { "key": "maxWaitSec", "value": "90" },
-    { "key": "reaperSlackMs", "value": "12000" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@ticketing.local"
+    },
+    {
+      "key": "adminPassword",
+      "value": "admin12345"
+    },
+    {
+      "key": "maxWaitSec",
+      "value": "90"
+    },
+    {
+      "key": "reaperSlackMs",
+      "value": "12000"
+    }
   ],
   "event": [
     {
@@ -55,7 +70,10 @@
               }
             }
           ],
-          "request": { "method": "GET", "url": "{{baseUrl}}/healthz" }
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/healthz"
+          }
         }
       ]
     },
@@ -88,7 +106,12 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"  User-A-{{runId}}@Test.local \",\n  \"password\": \"password123\"\n}"
@@ -116,8 +139,16 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"user-b-{{runId}}@test.local\",\n  \"password\": \"password123\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user-b-{{runId}}@test.local\",\n  \"password\": \"password123\"\n}"
+            },
             "url": "{{baseUrl}}/auth/register"
           }
         },
@@ -126,13 +157,26 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('409', () => pm.response.to.have.status(409));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
             }
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"user-a-{{runId}}@test.local\",\n  \"password\": \"password123\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user-a-{{runId}}@test.local\",\n  \"password\": \"password123\"\n}"
+            },
             "url": "{{baseUrl}}/auth/register"
           }
         },
@@ -156,8 +200,16 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
             "url": "{{baseUrl}}/auth/login"
           }
         },
@@ -166,13 +218,26 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('401', () => pm.response.to.have.status(401));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
             }
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"user-a-{{runId}}@test.local\",\n  \"password\": \"wrong-password\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user-a-{{runId}}@test.local\",\n  \"password\": \"wrong-password\"\n}"
+            },
             "url": "{{baseUrl}}/auth/login"
           }
         },
@@ -193,7 +258,16 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "url": "{{baseUrl}}/auth/me"
           }
@@ -203,10 +277,21 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('401', () => pm.response.to.have.status(401));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
             }
           ],
-          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/auth/me" }
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/me"
+          }
         },
         {
           "name": "Refresh (rotation)",
@@ -231,8 +316,16 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{userARefresh}}\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{userARefresh}}\"\n}"
+            },
             "url": "{{baseUrl}}/auth/refresh"
           }
         },
@@ -241,13 +334,26 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('401', () => pm.response.to.have.status(401));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
             }
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{userARefreshOld}}\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{userARefreshOld}}\"\n}"
+            },
             "url": "{{baseUrl}}/auth/refresh",
             "description": "Dùng lại token đã rotate => coi như bị lộ, thu hồi cả family."
           }
@@ -257,13 +363,26 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('401', () => pm.response.to.have.status(401));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
             }
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{userARefresh}}\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{userARefresh}}\"\n}"
+            },
             "url": "{{baseUrl}}/auth/refresh"
           }
         },
@@ -272,13 +391,26 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('204', () => pm.response.to.have.status(204));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
+              }
             }
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{userBRefresh}}\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{userBRefresh}}\"\n}"
+            },
             "url": "{{baseUrl}}/auth/logout",
             "description": "Chỉ thu hồi refresh token; access token của B vẫn dùng được tới khi hết hạn."
           }
@@ -293,14 +425,36 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('403', () => pm.response.to.have.status(403));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));"
+                ]
+              }
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Not allowed\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Not allowed\"\n}"
+            },
             "url": "{{baseUrl}}/admin/venues"
           }
         },
@@ -319,10 +473,27 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman Arena {{runId}}\",\n  \"address\": \"1 Dai Co Viet, Ha Noi\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Arena {{runId}}\",\n  \"address\": \"1 Dai Co Viet, Ha Noi\"\n}"
+            },
             "url": "{{baseUrl}}/admin/venues"
           }
         },
@@ -331,14 +502,36 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('400', () => pm.response.to.have.status(400));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Bad\",\n  \"venueId\": \"{{venueId}}\",\n  \"startsAt\": \"not-a-date\",\n  \"tiers\": []\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bad\",\n  \"venueId\": \"{{venueId}}\",\n  \"startsAt\": \"not-a-date\",\n  \"tiers\": []\n}"
+            },
             "url": "{{baseUrl}}/admin/events"
           }
         },
@@ -349,7 +542,9 @@
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.collectionVariables.set('startsAt', new Date(Date.now() + 30 * 86400e3).toISOString());"]
+                "exec": [
+                  "pm.collectionVariables.set('startsAt', new Date(Date.now() + 30 * 86400e3).toISOString());"
+                ]
               }
             },
             {
@@ -372,9 +567,23 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Postman Concert {{runId}}\",\n  \"description\": \"Phase 1 e2e\",\n  \"venueId\": \"{{venueId}}\",\n  \"startsAt\": \"{{startsAt}}\",\n  \"tiers\": [\n    { \"name\": \"VIP\", \"priceAmount\": 2000000, \"currency\": \"VND\" },\n    { \"name\": \"Standard\", \"priceAmount\": 800000, \"currency\": \"VND\" }\n  ]\n}"
@@ -399,9 +608,23 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"blocks\": [\n    { \"section\": \"A\", \"rowCount\": 1, \"seatsPerRow\": 3, \"tierId\": \"{{tierVipId}}\" },\n    { \"section\": \"B\", \"rowCount\": 1, \"seatsPerRow\": 3, \"tierId\": \"{{tierStdId}}\" }\n  ]\n}"
@@ -426,9 +649,23 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"blocks\": [\n    { \"section\": \"A\", \"rowCount\": 1, \"seatsPerRow\": 3, \"tierId\": \"{{tierVipId}}\" },\n    { \"section\": \"B\", \"rowCount\": 1, \"seatsPerRow\": 3, \"tierId\": \"{{tierStdId}}\" }\n  ]\n}"
@@ -441,10 +678,21 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('404', () => pm.response.to.have.status(404));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
             }
           ],
-          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}" }
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/events/{{eventId}}"
+          }
         },
         {
           "name": "Admin get draft event",
@@ -463,7 +711,16 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "url": "{{baseUrl}}/admin/events/{{eventId}}"
           }
@@ -485,7 +742,16 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "url": "{{baseUrl}}/admin/events/{{eventId}}/publish"
           }
@@ -507,7 +773,16 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "url": "{{baseUrl}}/admin/events/{{eventId}}/publish"
           }
@@ -517,13 +792,32 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('409', () => pm.response.to.have.status(409));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"blocks\": [\n    { \"section\": \"C\", \"rowCount\": 1, \"seatsPerRow\": 2, \"tierId\": \"{{tierStdId}}\" }\n  ]\n}"
@@ -554,7 +848,13 @@
               }
             }
           ],
-          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events?pageSize=100" }
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/events?pageSize=100"
+          }
         },
         {
           "name": "Get event",
@@ -574,7 +874,13 @@
               }
             }
           ],
-          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}" }
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/events/{{eventId}}"
+          }
         },
         {
           "name": "List seats (all available)",
@@ -597,7 +903,13 @@
               }
             }
           ],
-          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}/seats" }
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/events/{{eventId}}/seats"
+          }
         }
       ]
     },
@@ -609,14 +921,36 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('400', () => pm.response.to.have.status(400));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat1}}\"]\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"seatIds\": [\"{{seat1}}\"]\n}"
+            },
             "url": "{{baseUrl}}/events/{{eventId}}/holds"
           }
         },
@@ -642,13 +976,31 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "hold-a-{{runId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "hold-a-{{runId}}"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat1}}\", \"{{seat2}}\"]\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"seatIds\": [\"{{seat1}}\", \"{{seat2}}\"]\n}"
+            },
             "url": "{{baseUrl}}/events/{{eventId}}/holds"
           }
         },
@@ -669,13 +1021,31 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "hold-a-{{runId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "hold-a-{{runId}}"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat1}}\", \"{{seat2}}\"]\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"seatIds\": [\"{{seat1}}\", \"{{seat2}}\"]\n}"
+            },
             "url": "{{baseUrl}}/events/{{eventId}}/holds"
           }
         },
@@ -684,17 +1054,40 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('409 (1 hold active/user/event)', () => pm.response.to.have.status(409));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 (1 hold active/user/event)', () => pm.response.to.have.status(409));"
+                ]
+              }
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "hold-a2-{{runId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "hold-a2-{{runId}}"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat3}}\"]\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"seatIds\": [\"{{seat3}}\"]\n}"
+            },
             "url": "{{baseUrl}}/events/{{eventId}}/holds"
           }
         },
@@ -716,7 +1109,13 @@
               }
             }
           ],
-          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}/seats" }
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/events/{{eventId}}/seats"
+          }
         },
         {
           "name": "User B holds seat2+seat3 -> 409",
@@ -737,13 +1136,31 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userBToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userBToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "hold-b1-{{runId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "hold-b1-{{runId}}"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat2}}\", \"{{seat3}}\"]\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"seatIds\": [\"{{seat2}}\", \"{{seat3}}\"]\n}"
+            },
             "url": "{{baseUrl}}/events/{{eventId}}/holds"
           }
         },
@@ -752,11 +1169,25 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('403', () => pm.response.to.have.status(403));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));"
+                ]
+              }
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userBToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userBToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "url": "{{baseUrl}}/holds/{{holdAId}}"
           }
@@ -766,11 +1197,25 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('403', () => pm.response.to.have.status(403));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));"
+                ]
+              }
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userBToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userBToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "DELETE",
             "url": "{{baseUrl}}/holds/{{holdAId}}"
           }
@@ -792,7 +1237,16 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "url": "{{baseUrl}}/holds/{{holdAId}}"
           }
@@ -802,11 +1256,25 @@
           "event": [
             {
               "listen": "test",
-              "script": { "type": "text/javascript", "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "url": "{{baseUrl}}/holds/{{holdAId}}"
           }
@@ -828,7 +1296,16 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "DELETE",
             "url": "{{baseUrl}}/holds/{{holdAId}}"
           }
@@ -850,7 +1327,16 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "DELETE",
             "url": "{{baseUrl}}/holds/{{holdAId}}"
           }
@@ -872,7 +1358,13 @@
               }
             }
           ],
-          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}/seats" }
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/events/{{eventId}}/seats"
+          }
         },
         {
           "name": "User B holds seat2+seat3",
@@ -894,20 +1386,505 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userBToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userBToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "hold-b2-{{runId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "hold-b2-{{runId}}"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat2}}\", \"{{seat3}}\"]\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"seatIds\": [\"{{seat2}}\", \"{{seat3}}\"]\n}"
+            },
             "url": "{{baseUrl}}/events/{{eventId}}/holds"
           }
         }
       ]
     },
     {
-      "name": "5. Expiry (needs short HOLD_TTL)",
+      "name": "5. Orders",
+      "description": "Tạo đơn từ hold qua gateway -> order -> inventory/catalog thật. Đơn dừng ở awaiting_payment (Payment là M5). Hold của đơn được gia hạn quá payment deadline.",
+      "item": [
+        {
+          "name": "Create order without Idempotency-Key -> 400",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/orders",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{$guid}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "User A holds seat1 for an order",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/events/{{eventId}}/holds",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "hold-a-order-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"seatIds\": [\n    \"{{seat1}}\"\n  ]\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + active', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(pm.response.json().status).to.eql('active');",
+                  "  pm.collectionVariables.set('holdOrderId', pm.response.json().id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create order",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/orders",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "order-a-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{holdOrderId}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + awaiting_payment, giá do server tính', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const o = pm.response.json();",
+                  "  pm.expect(o.status).to.eql('awaiting_payment');",
+                  "  pm.expect(o.userId).to.eql(pm.collectionVariables.get('userAId'));",
+                  "  pm.expect(o.holdId).to.eql(pm.collectionVariables.get('holdOrderId'));",
+                  "  pm.expect(o.seatIds).to.eql([pm.collectionVariables.get('seat1')]);",
+                  "  // seat1 thuộc section A = hạng VIP 2.000.000 VND",
+                  "  pm.expect(o.amount).to.eql(2000000);",
+                  "  pm.expect(o.currency).to.eql('VND');",
+                  "  pm.expect(new Date(o.paymentDeadline).getTime()).to.be.above(Date.now() + 9 * 60e3);",
+                  "  pm.collectionVariables.set('orderId', o.id);",
+                  "  pm.collectionVariables.set('paymentDeadline', o.paymentDeadline);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retry same Idempotency-Key -> same order",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/orders",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "order-a-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{holdOrderId}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + cùng order id', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('orderId'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Second order for same hold -> 409",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/orders",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "order-a2-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{holdOrderId}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Mỗi hold tối đa một đơn, kể cả khi đổi Idempotency-Key."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "User B orders A's hold -> 403",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/orders",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "order-b-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{holdOrderId}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userBToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Order unknown hold -> 404",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/orders",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "order-a3-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{$guid}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get order (owner)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/orders/{{orderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + awaiting_payment', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('awaiting_payment');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get order as user B -> 403",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/orders/{{orderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userBToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get order as admin",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/orders/{{orderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get unknown order -> 404",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/orders/{{$guid}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hold extended past payment deadline",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/holds/{{holdOrderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "CreateOrder gọi inventory.ExtendHold(PAYMENT_TIMEOUT + HOLD_BUFFER) để ghế không hết hạn khi user đang trả tiền."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('hold active, hạn > paymentDeadline', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const h = pm.response.json();",
+                  "  pm.expect(h.status).to.eql('active');",
+                  "  const deadline = new Date(pm.collectionVariables.get('paymentDeadline')).getTime();",
+                  "  pm.expect(new Date(h.expiresAt).getTime()).to.be.above(deadline);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Expiry (needs short HOLD_TTL)",
       "description": "Chờ hold của B hết hạn, reaper trả ghế về available, rồi A giữ lại được. Bị bỏ qua nếu phải chờ quá `maxWaitSec` (HOLD_TTL mặc định 5m).",
       "event": [
         {
@@ -959,7 +1936,16 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userBToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userBToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "url": "{{baseUrl}}/holds/{{holdBId}}"
           }
@@ -981,10 +1967,16 @@
               }
             }
           ],
-          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/events/{{eventId}}/seats" }
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/events/{{eventId}}/seats"
+          }
         },
         {
-          "name": "User A re-holds seat2",
+          "name": "Another user (admin) re-holds seat2",
           "event": [
             {
               "listen": "test",
@@ -1000,14 +1992,33 @@
             }
           ],
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{userAToken}}", "type": "string" }] },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "hold-a3-{{runId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "hold-a3-{{runId}}"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"seatIds\": [\"{{seat2}}\"]\n}" },
-            "url": "{{baseUrl}}/events/{{eventId}}/holds"
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"seatIds\": [\"{{seat2}}\"]\n}"
+            },
+            "url": "{{baseUrl}}/events/{{eventId}}/holds",
+            "description": "Dùng admin vì user A đang có hold active (của đơn ở folder 5) trong event này."
           }
         }
       ]

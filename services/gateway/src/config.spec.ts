@@ -21,7 +21,7 @@ describe('loadConfig', () => {
     const c = loadConfig({ JWT_ACCESS_SECRET: SECRET });
     expect(c.port).toBe(3000);
     expect(c.jwt).toEqual({ accessSecret: SECRET, accessTtlSec: 900, refreshTtlSec: 604_800 });
-    expect(c.rateLimit).toEqual({ windowMs: 60_000, default: 120, auth: 10, hold: 10 });
+    expect(c.rateLimit).toEqual({ windowMs: 60_000, default: 120, auth: 10, hold: 10, order: 10 });
     expect(c.trustProxy).toBe(false);
     expect(c.admin).toBeUndefined();
   });

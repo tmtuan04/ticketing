@@ -170,6 +170,7 @@ services:
       REDIS_URL: redis://redis:6379
       INVENTORY_GRPC_URL: inventory:50051
       CATALOG_GRPC_URL: catalog:50052
+      ORDER_GRPC_URL: order:50053
       # chỉ dùng cho môi trường dev
       JWT_ACCESS_SECRET: dev-only-secret-change-me-0123456789abcdef
       ADMIN_EMAIL: admin@ticketing.local
@@ -184,6 +185,7 @@ services:
       redis: { condition: service_healthy }
       inventory: { condition: service_healthy }
       catalog: { condition: service_healthy }
+      order: { condition: service_healthy }
       gateway-migrate: { condition: service_completed_successfully }
 
 volumes:

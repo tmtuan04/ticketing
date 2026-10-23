@@ -89,7 +89,7 @@ test-short:
 	cd services/gateway && npm test
 	cd services/catalog && npm test
 
-# Luồng end-to-end Phase 1 qua gateway trên stack đang chạy (`make up`). Folder Expiry chỉ chạy
+# Luồng end-to-end (Phase 1 + tạo đơn) qua gateway trên stack đang chạy (`make up`). Folder Expiry chỉ chạy
 # khi stack dựng với HOLD_TTL ngắn, vd `HOLD_TTL=15s make up`.
 e2e:
 	postman collection run postman/ticketing-phase1.postman_collection.json
