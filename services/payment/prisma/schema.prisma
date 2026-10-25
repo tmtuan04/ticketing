@@ -1,0 +1,100 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// requires_payment -> succeeded | failed. Trạng thái chỉ đổi qua webhook của cổng thanh toán.
+enum PaymentStatus {
+  requires_payment
+  succeeded
+  failed
+
+  @@map("payment_status")
+}
+
+// Kết quả user chọn ở cổng giả lập; timeout = cổng không bao giờ gọi webhook.
+enum ChargeOutcome {
+  success
+  fail
+  timeout
+
+  @@map("charge_outcome")
+}
+
+// Một đơn có đúng một intent (order_id UNIQUE): payment.requested gửi lại bao nhiêu lần cũng vậy.
+model PaymentIntent {
+  id              String        @id @default(uuid()) @db.Uuid
+  orderId         String        @unique @map("order_id") @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  // đơn vị tiền nhỏ nhất (VND: đồng), lấy từ payment.requested
+  amount          BigInt
+  currency        String        @db.Char(3)
+  status          PaymentStatus @default(requires_payment)
+  // chỉ để hiển thị: quá hạn hay không là việc của order (thanh toán muộn => refund ở M6)
+  paymentDeadline DateTime      @map("payment_deadline") @db.Timestamptz
+  failureReason   String        @default("") @map("failure_reason")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  charge          MockCharge?
+
+  @@map("payment_intents")
+}
+
+// Webhook đã nhận, chống trùng theo id sự kiện của cổng (cổng retry khi không nhận được 2xx).
+model WebhookEvent {
+  providerEventId String   @id @map("provider_event_id")
+  type            String
+  receivedAt      DateTime @default(now()) @map("received_at") @db.Timestamptz
+
+  @@map("webhook_events")
+}
+
+// Transactional Outbox, cùng cấu trúc với bảng outbox của order (Go) để message hai bên giống nhau.
+model OutboxMessage {
+  id          BigInt    @id @default(autoincrement())
+  messageId   String    @unique @map("message_id") @db.Uuid
+  aggregateId String    @map("aggregate_id") @db.Uuid
+  topic       String
+  key         String
+  type        String
+  payload     Json
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  publishedAt DateTime? @map("published_at") @db.Timestamptz
+
+  @@map("outbox")
+}
+
+// message_id (header) của message đã xử lý từ Redpanda.
+model InboxMessage {
+  messageId   String   @id @map("message_id") @db.Uuid
+  topic       String
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz
+
+  @@map("inbox")
+}
+
+// Cổng thanh toán giả lập (mock-gateway). Ngoài đời đây là hệ thống của bên thứ ba; ở đây chạy chung
+// process và DB cho gọn, nhưng chỉ đọc payment_intents, mọi thay đổi intent đều đi qua webhook.
+model MockCharge {
+  id             String        @id @default(uuid()) @db.Uuid
+  // mỗi intent một charge: muốn trả lại sau khi fail thì phải tạo đơn mới
+  intentId       String        @unique @map("intent_id") @db.Uuid
+  idempotencyKey String        @map("idempotency_key")
+  outcome        ChargeOutcome
+  amount         BigInt
+  currency       String        @db.Char(3)
+  // lần gửi webhook tiếp theo; worker đẩy lên trước khi gửi (lease) để nhiều replica không gửi trùng
+  deliverAt      DateTime      @map("deliver_at") @db.Timestamptz
+  attempts       Int           @default(0)
+  deliveredAt    DateTime?     @map("delivered_at") @db.Timestamptz
+  lastError      String        @default("") @map("last_error")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  intent         PaymentIntent @relation(fields: [intentId], references: [id], onDelete: Restrict)
+
+  @@map("mock_charges")
+}

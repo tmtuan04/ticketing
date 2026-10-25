@@ -150,6 +150,38 @@ services:
       inventory: { condition: service_healthy }
       catalog-migrate: { condition: service_completed_successfully }
 
+  payment-migrate:
+    build:
+      context: ..
+      dockerfile: services/payment/Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/payment_db
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # REST công khai (không qua gateway): GET /payments/orders/:id, cổng giả lập /mock-gateway/pay/:id
+  # và webhook /payments/webhook mà cổng giả lập gọi ngược lại chính service này.
+  payment:
+    build:
+      context: ..
+      dockerfile: services/payment/Dockerfile
+    environment:
+      PORT: "3001"
+      DATABASE_URL: postgresql://app:app@postgres:5432/payment_db
+      KAFKA_BROKERS: redpanda:9092
+      # chỉ dùng cho môi trường dev
+      WEBHOOK_SECRET: dev-only-webhook-secret-0123456789abcdef
+    ports: ["3001:3001"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/healthz"]
+      interval: 5s
+      retries: 10
+    depends_on:
+      postgres: { condition: service_healthy }
+      payment-migrate: { condition: service_completed_successfully }
+      redpanda-init: { condition: service_completed_successfully }
+
   gateway-migrate:
     build:
       context: ..

@@ -4,10 +4,11 @@ INVENTORY_DB_URL ?= postgres://app:app@localhost:5440/inventory_db?sslmode=disab
 INVENTORY_MIGRATIONS := services/inventory/migrations
 GATEWAY_DB_URL ?= postgresql://app:app@localhost:5440/auth_db
 CATALOG_DB_URL ?= postgresql://app:app@localhost:5440/catalog_db
+PAYMENT_DB_URL ?= postgresql://app:app@localhost:5440/payment_db
 ORDER_DB_URL ?= postgres://app:app@localhost:5440/order_db?sslmode=disable
 ORDER_MIGRATIONS := services/order/migrations
 
-.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new migrate-gateway migrate-catalog migrate-order migrate-order-down migrate-order-new test test-short test-inventory test-order test-gateway test-catalog e2e
+.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new migrate-gateway migrate-catalog migrate-payment migrate-order migrate-order-down migrate-order-new test test-short test-inventory test-order test-gateway test-catalog test-payment e2e
 
 up:
 	$(COMPOSE) up -d --build --wait
@@ -32,7 +33,7 @@ proto: proto-lint
 	cd gen/go && go mod tidy
 
 # Chạy migration của mọi service (compose cũng tự chạy khi `make up`)
-migrate: migrate-inventory migrate-order migrate-gateway migrate-catalog
+migrate: migrate-inventory migrate-order migrate-gateway migrate-catalog migrate-payment
 
 migrate-inventory:
 	migrate -path $(INVENTORY_MIGRATIONS) -database "$(INVENTORY_DB_URL)" up
@@ -62,13 +63,17 @@ migrate-catalog: export DATABASE_URL = $(CATALOG_DB_URL)
 migrate-catalog:
 	cd services/catalog && npx prisma migrate deploy
 
+migrate-payment: export DATABASE_URL = $(PAYMENT_DB_URL)
+migrate-payment:
+	cd services/payment && npx prisma migrate deploy
+
 # sqlc chạy qua Docker (mỗi service Go có sqlc.yaml riêng). Trong Git Bash cần MSYS_NO_PATHCONV=1.
 sqlc:
 	docker run --rm -v "$(CURDIR)/services/inventory:/src" -w /src sqlc/sqlc:1.27.0 generate
 	docker run --rm -v "$(CURDIR)/services/order:/src" -w /src sqlc/sqlc:1.27.0 generate
 
 # Integration/e2e test dùng testcontainers (cần Docker đang chạy). Service Nest cần Node 24 (.nvmrc).
-test: test-inventory test-order test-gateway test-catalog
+test: test-inventory test-order test-gateway test-catalog test-payment
 
 test-inventory:
 	cd services/inventory && go test -race ./...
@@ -82,14 +87,18 @@ test-gateway:
 test-catalog:
 	cd services/catalog && npx prisma generate && npm test && npm run test:e2e
 
+test-payment:
+	cd services/payment && npx prisma generate && npm test && npm run test:e2e
+
 # Chỉ unit test, bỏ qua test cần container
 test-short:
 	cd services/inventory && go test -short ./...
 	cd services/order && go test -short ./...
 	cd services/gateway && npm test
 	cd services/catalog && npm test
+	cd services/payment && npm test
 
-# Luồng end-to-end (Phase 1 + tạo đơn) qua gateway trên stack đang chạy (`make up`). Folder Expiry chỉ chạy
+# Luồng end-to-end (Phase 1 + tạo đơn + thanh toán) qua gateway trên stack đang chạy (`make up`). Folder Expiry chỉ chạy
 # khi stack dựng với HOLD_TTL ngắn, vd `HOLD_TTL=15s make up`.
 e2e:
 	postman collection run postman/ticketing-phase1.postman_collection.json

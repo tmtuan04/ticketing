@@ -1,13 +1,17 @@
 {
   "info": {
-    "name": "Ticketing - e2e (auth, catalog, holds, orders)",
-    "description": "Luồng end-to-end qua gateway trên stack thật (`make up`): Phase 1 + tạo đơn (M4).\n\nMỗi lần chạy tạo user/event mới nên chạy lại được nhiều lần. Lưu ý rate limit auth mặc định 10 request/phút/IP: collection dùng 8, chạy lại liền nhau thì chờ 1 phút.\n\nFolder `6. Expiry` chờ hold hết hạn rồi kiểm tra reaper; chỉ chạy khi thời gian chờ <= `maxWaitSec`, nên cần dựng stack với HOLD_TTL ngắn (vd `HOLD_TTL=15s make up`), nếu không folder này bị bỏ qua.",
+    "name": "Ticketing - e2e (auth, catalog, holds, orders, payment)",
+    "description": "Luồng end-to-end qua gateway trên stack thật (`make up`): Phase 1 + tạo đơn (M4) + thanh toán qua cổng giả lập (M5, gọi thẳng payment ở `paymentUrl`).\n\nMỗi lần chạy tạo user/event mới nên chạy lại được nhiều lần. Lưu ý rate limit auth mặc định 10 request/phút/IP: collection dùng 8, chạy lại liền nhau thì chờ 1 phút.\n\nFolder `7. Expiry` chờ hold hết hạn rồi kiểm tra reaper; chỉ chạy khi thời gian chờ <= `maxWaitSec`, nên cần dựng stack với HOLD_TTL ngắn (vd `HOLD_TTL=15s make up`), nếu không folder này bị bỏ qua.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://localhost:3000"
+    },
+    {
+      "key": "paymentUrl",
+      "value": "http://localhost:3001"
     },
     {
       "key": "adminEmail",
@@ -1884,7 +1888,277 @@
       ]
     },
     {
-      "name": "6. Expiry (needs short HOLD_TTL)",
+      "name": "6. Payment",
+      "description": "Đơn ở folder 5 -> outbox của order -> Redpanda (payment.commands) -> payment tạo intent. Trả tiền qua cổng giả lập của payment (port 3001, không qua gateway); cổng gọi webhook có chữ ký HMAC, payment ghi payment.succeeded vào outbox. Đơn vẫn awaiting_payment cho tới M6 (order consume payment.events).",
+      "item": [
+        {
+          "name": "Payment intent created from payment.requested",
+          "request": {
+            "method": "GET",
+            "url": "{{paymentUrl}}/payments/orders/{{orderId}}",
+            "description": "Intent tạo bất đồng bộ nên poll tới khi có (tối đa ~10s)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tries = Number(pm.collectionVariables.get('pollTries') || 0);",
+                  "if (!(pm.response.code === 200) && tries < 40) {",
+                  "  pm.collectionVariables.set('pollTries', tries + 1);",
+                  "  setTimeout(() => {}, 250);",
+                  "  pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset('pollTries');",
+                  "  pm.test('200 + requires_payment, khớp với đơn', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    const i = pm.response.json();",
+                  "    pm.expect(i.status).to.eql('requires_payment');",
+                  "    pm.expect(i.orderId).to.eql(pm.collectionVariables.get('orderId'));",
+                  "    pm.expect(i.userId).to.eql(pm.collectionVariables.get('userAId'));",
+                  "    pm.expect(i.amount).to.eql(2000000);",
+                  "    pm.expect(i.currency).to.eql('VND');",
+                  "    pm.expect(i.paymentDeadline).to.eql(pm.collectionVariables.get('paymentDeadline'));",
+                  "    pm.collectionVariables.set('intentId', i.id);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pay without Idempotency-Key -> 400",
+          "request": {
+            "method": "POST",
+            "url": "{{paymentUrl}}/mock-gateway/pay/{{intentId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"success\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pay unknown intent -> 404",
+          "request": {
+            "method": "POST",
+            "url": "{{paymentUrl}}/mock-gateway/pay/{{$guid}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "pay-unknown-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"success\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pay (success)",
+          "request": {
+            "method": "POST",
+            "url": "{{paymentUrl}}/mock-gateway/pay/{{intentId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "pay-a-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"success\",\n  \"delayMs\": 500\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202, kết quả đến sau qua webhook', () => {",
+                  "  pm.response.to.have.status(202);",
+                  "  const ch = pm.response.json();",
+                  "  pm.expect(ch.intentId).to.eql(pm.collectionVariables.get('intentId'));",
+                  "  pm.expect(ch.outcome).to.eql('success');",
+                  "  pm.expect(ch.amount).to.eql(2000000);",
+                  "  pm.collectionVariables.set('chargeId', ch.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retry same Idempotency-Key -> same charge",
+          "request": {
+            "method": "POST",
+            "url": "{{paymentUrl}}/mock-gateway/pay/{{intentId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "pay-a-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"success\",\n  \"delayMs\": 500\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 + cùng charge', () => {",
+                  "  pm.response.to.have.status(202);",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('chargeId'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pay again with another key -> 409",
+          "request": {
+            "method": "POST",
+            "url": "{{paymentUrl}}/mock-gateway/pay/{{intentId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "pay-a-other-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"fail\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409: mỗi intent một charge', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Intent succeeded via webhook",
+          "request": {
+            "method": "GET",
+            "url": "{{paymentUrl}}/payments/orders/{{orderId}}",
+            "description": "Poll tới khi webhook (sau delayMs) đổi intent sang succeeded."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tries = Number(pm.collectionVariables.get('pollTries') || 0);",
+                  "if (!(pm.response.json().status === 'succeeded') && tries < 40) {",
+                  "  pm.collectionVariables.set('pollTries', tries + 1);",
+                  "  setTimeout(() => {}, 250);",
+                  "  pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset('pollTries');",
+                  "  pm.test('succeeded', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    const i = pm.response.json();",
+                  "    pm.expect(i.status).to.eql('succeeded');",
+                  "    pm.expect(i.id).to.eql(pm.collectionVariables.get('intentId'));",
+                  "    pm.expect(i.failureReason).to.eql(null);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Webhook without signature -> 401",
+          "request": {
+            "method": "POST",
+            "url": "{{paymentUrl}}/payments/webhook",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"evt_forged\",\n  \"type\": \"charge.succeeded\",\n  \"data\": {\n    \"payment_intent_id\": \"{{intentId}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401: webhook giả mạo bị chặn', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Expiry (needs short HOLD_TTL)",
       "description": "Chờ hold của B hết hạn, reaper trả ghế về available, rồi A giữ lại được. Bị bỏ qua nếu phải chờ quá `maxWaitSec` (HOLD_TTL mặc định 5m).",
       "event": [
         {
