@@ -11,6 +11,10 @@ export interface AppConfig {
     clientId: string;
     /** consumer group đọc payment.commands; nhiều replica cùng group chia nhau partition */
     groupId: string;
+    /** lỗi không rõ loại: thử bấy nhiêu lần rồi đẩy message sang DLQ */
+    maxAttempts: number;
+    /** chờ giữa hai lần thử đầu, nhân đôi dần tới 10s */
+    retryBackoffMs: number;
   };
   outbox: {
     intervalMs: number;
@@ -88,6 +92,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         .filter(Boolean),
       clientId: str('KAFKA_CLIENT_ID', 'payment'),
       groupId: str('KAFKA_GROUP_ID', 'payment'),
+      maxAttempts: int('CONSUMER_MAX_ATTEMPTS', 5),
+      retryBackoffMs: dur('CONSUMER_RETRY_BACKOFF', '200ms'),
     },
     outbox: {
       intervalMs: dur('OUTBOX_INTERVAL', '500ms'),

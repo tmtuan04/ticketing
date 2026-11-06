@@ -18,6 +18,9 @@ var (
 	// ErrUnavailable: service phía sau (inventory, catalog) lỗi hoặc quá hạn. Client nên thử lại
 	// với cùng idempotency key.
 	ErrUnavailable = errors.New("upstream unavailable")
+	// ErrInvalidMessage: message từ Redpanda sai contract (payload hỏng, đơn không tồn tại...). Xử
+	// lý lại bao nhiêu lần cũng vậy, consumer đẩy sang DLQ thay vì retry.
+	ErrInvalidMessage = errors.New("invalid message")
 )
 
 func invalidArg(format string, args ...any) error {

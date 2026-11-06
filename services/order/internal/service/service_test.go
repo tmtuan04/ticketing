@@ -91,6 +91,64 @@ type fakeInventory struct {
 	getErr  error // lỗi trả cho GetHold (mô phỏng inventory sập)
 	extErr  error // lỗi trả cho ExtendHold (mô phỏng hold vừa hết hạn)
 	extends []time.Duration
+	// lỗi trả cho ConfirmHold / ReleaseHold (mô phỏng inventory sập)
+	confirmErr, releaseErr error
+	confirms, releases     int
+}
+
+// ConfirmHold/ReleaseHold mô phỏng đúng máy trạng thái của inventory, kể cả idempotent: confirm
+// hold đã confirm hay nhả hold đã nhả/hết hạn đều thành công; hold đã bán thì không nhả được.
+func (f *fakeInventory) ConfirmHold(_ context.Context, in *inventoryv1.ConfirmHoldRequest, _ ...grpc.CallOption) (*inventoryv1.ConfirmHoldResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.confirmErr != nil {
+		return nil, f.confirmErr
+	}
+	f.confirms++
+	h, ok := f.holds[in.GetHoldId()]
+	switch {
+	case !ok:
+		return nil, status.Error(codes.NotFound, "hold not found")
+	case h.Status == inventoryv1.HoldStatus_HOLD_STATUS_ACTIVE:
+		h.Status = inventoryv1.HoldStatus_HOLD_STATUS_CONFIRMED
+	case h.Status != inventoryv1.HoldStatus_HOLD_STATUS_CONFIRMED:
+		return nil, status.Error(codes.FailedPrecondition, "hold is no longer active")
+	}
+	return &inventoryv1.ConfirmHoldResponse{Hold: proto.CloneOf(h)}, nil
+}
+
+func (f *fakeInventory) ReleaseHold(_ context.Context, in *inventoryv1.ReleaseHoldRequest, _ ...grpc.CallOption) (*inventoryv1.ReleaseHoldResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.releaseErr != nil {
+		return nil, f.releaseErr
+	}
+	f.releases++
+	h, ok := f.holds[in.GetHoldId()]
+	switch {
+	case !ok:
+		return nil, status.Error(codes.NotFound, "hold not found")
+	case h.UserId != in.GetUserId():
+		return nil, status.Error(codes.PermissionDenied, "hold belongs to another user")
+	case h.Status == inventoryv1.HoldStatus_HOLD_STATUS_CONFIRMED:
+		return nil, status.Error(codes.FailedPrecondition, "hold is no longer active")
+	case h.Status == inventoryv1.HoldStatus_HOLD_STATUS_ACTIVE:
+		h.Status = inventoryv1.HoldStatus_HOLD_STATUS_RELEASED
+	}
+	return &inventoryv1.ReleaseHoldResponse{Hold: proto.CloneOf(h)}, nil
+}
+
+// holdStatus đọc trạng thái hold trong inventory giả.
+func (f *fakeInventory) holdStatus(id uuid.UUID) inventoryv1.HoldStatus {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.holds[id.String()].GetStatus()
+}
+
+func (f *fakeInventory) setHoldStatus(id uuid.UUID, s inventoryv1.HoldStatus) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.holds[id.String()].Status = s
 }
 
 func (f *fakeInventory) GetHold(_ context.Context, in *inventoryv1.GetHoldRequest, _ ...grpc.CallOption) (*inventoryv1.GetHoldResponse, error) {

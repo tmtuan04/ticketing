@@ -6,7 +6,13 @@ describe('loadConfig', () => {
   it('uses defaults for everything except the webhook secret', () => {
     const c = loadConfig({ WEBHOOK_SECRET: SECRET });
     expect(c.port).toBe(3001);
-    expect(c.kafka).toEqual({ brokers: ['localhost:19092'], clientId: 'payment', groupId: 'payment' });
+    expect(c.kafka).toEqual({
+      brokers: ['localhost:19092'],
+      clientId: 'payment',
+      groupId: 'payment',
+      maxAttempts: 5,
+      retryBackoffMs: 200,
+    });
     expect(c.outbox).toEqual({ intervalMs: 500, batchSize: 100 });
     expect(c.webhook).toEqual({
       secret: SECRET,

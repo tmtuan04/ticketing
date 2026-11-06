@@ -1,5 +1,6 @@
 // Điểm khởi động của order service: đọc config, mở Postgres, kết nối gRPC tới inventory và
-// catalog, dựng gRPC server, chạy outbox relay nền rồi chờ tín hiệu tắt. Cấu trúc giống hệt inventory/cmd/server
+// catalog, dựng gRPC server, chạy nền outbox relay + consumer payment.events + timeout worker rồi
+// chờ tín hiệu tắt. Cấu trúc giống hệt inventory/cmd/server
 // (xem các ghi chú [Go] bên đó); ở đây chỉ chú thích phần khác.
 package main
 
@@ -25,6 +26,8 @@ import (
 	inventoryv1 "github.com/tmtuan04/ticketing/gen/go/ticketing/inventory/v1"
 	orderv1 "github.com/tmtuan04/ticketing/gen/go/ticketing/order/v1"
 	"github.com/tmtuan04/ticketing/order/internal/config"
+	"github.com/tmtuan04/ticketing/order/internal/consumer"
+	"github.com/tmtuan04/ticketing/order/internal/expiry"
 	"github.com/tmtuan04/ticketing/order/internal/grpcserver"
 	"github.com/tmtuan04/ticketing/order/internal/outbox"
 	"github.com/tmtuan04/ticketing/order/internal/service"
@@ -102,8 +105,26 @@ func run() error {
 	}
 	defer producer.Close()
 
+	// Consumer payment.events: nửa sau của Saga. Record lỗi được đẩy sang DLQ bằng chính producer của relay.
+	cons, err := consumer.New(consumer.Config{
+		Brokers:     cfg.KafkaBrokers,
+		Group:       cfg.KafkaGroupID,
+		Topic:       service.TopicPaymentEvents,
+		MaxAttempts: cfg.ConsumerAttempts,
+		MinBackoff:  cfg.ConsumerBackoff,
+		MaxBackoff:  30 * time.Second,
+	}, producer, svc.HandlePaymentEvent, log)
+	if err != nil {
+		return fmt.Errorf("kafka consumer: %w", err)
+	}
+
 	var wg sync.WaitGroup
 	wg.Go(func() { outbox.New(pool, producer, cfg.OutboxInterval, cfg.OutboxBatchSize, log).Run(ctx) })
+	wg.Go(func() {
+		cons.Run(ctx)
+		cons.Close()
+	})
+	wg.Go(func() { expiry.New(svc, cfg.ExpiryInterval, cfg.ExpiryBatchSize, log).Run(ctx) })
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(lis) }()
@@ -131,8 +152,8 @@ func run() error {
 		log.Warn("graceful stop timed out, forcing")
 		srv.Stop()
 	}
-	// Chờ relay dừng (lô đang dở bị ROLLBACK, lần chạy sau publish lại) trước khi các defer đóng
-	// producer và pool.
+	// Chờ relay, consumer và timeout worker dừng (việc đang dở bị ROLLBACK, record chưa mark được giao
+	// lại) trước khi các defer đóng producer và pool.
 	wg.Wait()
 	return nil
 }

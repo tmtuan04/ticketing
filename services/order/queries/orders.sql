@@ -24,3 +24,30 @@ WHERE hold_id = $1;
 -- name: InsertSagaLog :exec
 INSERT INTO order_saga_log (order_id, step, status, detail)
 VALUES (@order_id, @step, @status, @detail);
+
+-- name: LockOrder :one
+-- Saga: khóa đơn trong suốt transaction xử lý một message (kể cả lúc gọi inventory). Consumer và
+-- timeout worker không bao giờ cùng đổi một đơn: worker dùng SKIP LOCKED nên bỏ qua đơn đang bị khóa.
+SELECT * FROM orders
+WHERE id = $1
+FOR UPDATE;
+
+-- name: LockDueOrders :many
+-- Timeout worker: khóa một lô đơn chờ thanh toán đã quá hạn (dùng orders_payment_deadline_idx).
+-- SKIP LOCKED: nhiều replica chia nhau, và đơn consumer đang xử lý thì để consumer quyết định.
+SELECT * FROM orders
+WHERE status = 'awaiting_payment'
+  AND payment_deadline < now()
+ORDER BY payment_deadline
+LIMIT @batch_size
+FOR UPDATE SKIP LOCKED;
+
+-- name: UpdateOrderStatus :one
+-- Chỉ gọi khi đang giữ khóa dòng (LockOrder/LockDueOrders); service kiểm tra trạng thái nguồn trước.
+UPDATE orders
+SET status         = @status,
+    failure_reason = @failure_reason,
+    version        = version + 1,
+    updated_at     = now()
+WHERE id = @id
+RETURNING *;

@@ -24,6 +24,11 @@ type Config struct {
 	DeliveryTimeout  time.Duration // quá thời gian này chưa publish được thì relay ROLLBACK và thử lại
 	OutboxInterval   time.Duration // chu kỳ relay quét outbox
 	OutboxBatchSize  int32         // số message tối đa mỗi transaction của relay
+	KafkaGroupID     string        // consumer group đọc payment.events; các replica cùng group chia partition
+	ConsumerAttempts int           // lỗi không rõ loại: thử bấy nhiêu lần rồi đẩy DLQ
+	ConsumerBackoff  time.Duration // chờ giữa hai lần thử đầu, nhân đôi dần tới 30s
+	ExpiryInterval   time.Duration // chu kỳ timeout worker quét đơn quá hạn
+	ExpiryBatchSize  int32         // số đơn tối đa mỗi transaction của timeout worker
 	LogLevel         slog.Level
 }
 
@@ -42,6 +47,11 @@ func Load() (Config, error) {
 	c.DeliveryTimeout = duration("KAFKA_DELIVERY_TIMEOUT", 5*time.Second, &errs)
 	c.OutboxInterval = duration("OUTBOX_POLL_INTERVAL", 500*time.Millisecond, &errs)
 	c.OutboxBatchSize = int32(integer("OUTBOX_BATCH_SIZE", 100, &errs))
+	c.KafkaGroupID = env("KAFKA_GROUP_ID", "order")
+	c.ConsumerAttempts = integer("CONSUMER_MAX_ATTEMPTS", 5, &errs)
+	c.ConsumerBackoff = duration("CONSUMER_RETRY_BACKOFF", 200*time.Millisecond, &errs)
+	c.ExpiryInterval = duration("EXPIRY_INTERVAL", 2*time.Second, &errs)
+	c.ExpiryBatchSize = int32(integer("EXPIRY_BATCH_SIZE", 50, &errs))
 	if err := c.LogLevel.UnmarshalText([]byte(env("LOG_LEVEL", "info"))); err != nil {
 		errs = append(errs, fmt.Errorf("LOG_LEVEL: %w", err))
 	}

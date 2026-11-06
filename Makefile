@@ -98,7 +98,7 @@ test-short:
 	cd services/catalog && npm test
 	cd services/payment && npm test
 
-# Luồng end-to-end (Phase 1 + tạo đơn + thanh toán) qua gateway trên stack đang chạy (`make up`). Folder Expiry chỉ chạy
-# khi stack dựng với HOLD_TTL ngắn, vd `HOLD_TTL=15s make up`.
+# Luồng end-to-end (Phase 1 + tạo đơn + thanh toán + Saga) qua gateway trên stack đang chạy (`make up`). Folder
+# Expiry và Payment timeout chỉ chạy khi stack dựng với TTL ngắn, vd `HOLD_TTL=15s PAYMENT_TIMEOUT=20s make up`.
 e2e:
 	postman collection run postman/ticketing-phase1.postman_collection.json

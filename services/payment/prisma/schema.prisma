@@ -8,11 +8,13 @@ datasource db {
   provider = "postgresql"
 }
 
-// requires_payment -> succeeded | failed. Trạng thái chỉ đổi qua webhook của cổng thanh toán.
+// requires_payment -> succeeded | failed qua webhook của cổng thanh toán; succeeded -> refunded khi
+// order gửi payment.refund_requested (tiền về nhưng không giữ được ghế).
 enum PaymentStatus {
   requires_payment
   succeeded
   failed
+  refunded
 
   @@map("payment_status")
 }
@@ -38,6 +40,9 @@ model PaymentIntent {
   // chỉ để hiển thị: quá hạn hay không là việc của order (thanh toán muộn => refund ở M6)
   paymentDeadline DateTime      @map("payment_deadline") @db.Timestamptz
   failureReason   String        @default("") @map("failure_reason")
+  // lý do order yêu cầu hoàn tiền (hold_expired, paid_after_cancel), rỗng nếu chưa hoàn
+  refundReason    String        @default("") @map("refund_reason")
+  refundedAt      DateTime?     @map("refunded_at") @db.Timestamptz
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz
   charge          MockCharge?

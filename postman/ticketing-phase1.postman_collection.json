@@ -901,7 +901,7 @@
                   "  seats.forEach((s) => pm.expect(s.status).to.eql('available'));",
                   "  // Sắp xếp ổn định để seat1..seat3 luôn là A-1-1, A-1-2, A-1-3",
                   "  seats.sort((x, y) => x.section.localeCompare(y.section) || x.row.localeCompare(y.row, undefined, { numeric: true }) || x.number - y.number);",
-                  "  [1, 2, 3].forEach((i) => pm.collectionVariables.set(`seat${i}`, seats[i - 1].seatId));",
+                  "  [1, 2, 3, 4, 5, 6].forEach((i) => pm.collectionVariables.set(`seat${i}`, seats[i - 1].seatId));",
                   "});"
                 ]
               }
@@ -1554,7 +1554,7 @@
                   "  // seat1 thuộc section A = hạng VIP 2.000.000 VND",
                   "  pm.expect(o.amount).to.eql(2000000);",
                   "  pm.expect(o.currency).to.eql('VND');",
-                  "  pm.expect(new Date(o.paymentDeadline).getTime()).to.be.above(Date.now() + 9 * 60e3);",
+                  "  pm.expect(new Date(o.paymentDeadline).getTime()).to.be.above(Date.now()); // = now + PAYMENT_TIMEOUT",
                   "  pm.collectionVariables.set('orderId', o.id);",
                   "  pm.collectionVariables.set('paymentDeadline', o.paymentDeadline);",
                   "});"
@@ -2158,7 +2158,735 @@
       ]
     },
     {
-      "name": "7. Expiry (needs short HOLD_TTL)",
+      "name": "7. Saga",
+      "description": "Nửa sau của Saga (M6): order consume payment.events. Thanh toán thành công -> ghế sold, đơn confirmed; thất bại -> ghế được nhả, đơn cancelled.",
+      "item": [
+        {
+          "name": "Order confirmed after payment",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/orders/{{orderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Đơn ở folder 5 đã được trả tiền ở folder 6: payment.succeeded -> ConfirmHold -> confirmed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tries = Number(pm.collectionVariables.get('pollTries') || 0);",
+                  "if (!(pm.response.json().status === 'confirmed') && tries < 60) {",
+                  "  pm.collectionVariables.set('pollTries', tries + 1);",
+                  "  setTimeout(() => {}, 250);",
+                  "  pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset('pollTries');",
+                  "  pm.test('confirmed', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.eql('confirmed');",
+                  "    pm.expect(pm.response.json().failureReason).to.eql(null);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hold confirmed",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/holds/{{holdOrderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('hold confirmed', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('confirmed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seat1 sold",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/events/{{eventId}}/seats",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('trạng thái ghế', () => {",
+                  "  const st = Object.fromEntries(pm.response.json().seats.map((s) => [s.seatId, s.status]));",
+                  "  pm.expect(st[pm.collectionVariables.get('seat1')]).to.eql('sold');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "User A holds seat4 (payment will fail)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/events/{{eventId}}/holds",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "hold-a-fail-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"seatIds\": [\n    \"{{seat4}}\"\n  ]\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + active', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.collectionVariables.set('holdFailId', pm.response.json().id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create order (fail path)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/orders",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "order-a-fail-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{holdFailId}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + awaiting_payment', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(pm.response.json().status).to.eql('awaiting_payment');",
+                  "  pm.collectionVariables.set('orderFailId', pm.response.json().id);",
+                  "});",
+                  "pm.test('hạng Standard 800.000 VND', () => pm.expect(pm.response.json().amount).to.eql(800000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Payment intent (fail path)",
+          "request": {
+            "method": "GET",
+            "url": "{{paymentUrl}}/payments/orders/{{orderFailId}}",
+            "description": "Intent tạo bất đồng bộ nên poll tới khi có."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tries = Number(pm.collectionVariables.get('pollTries') || 0);",
+                  "if (!(pm.response.code === 200) && tries < 60) {",
+                  "  pm.collectionVariables.set('pollTries', tries + 1);",
+                  "  setTimeout(() => {}, 250);",
+                  "  pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset('pollTries');",
+                  "  pm.test('200 + requires_payment', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.eql('requires_payment');",
+                  "    pm.collectionVariables.set('intentFailId', pm.response.json().id);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pay (fail)",
+          "request": {
+            "method": "POST",
+            "url": "{{paymentUrl}}/mock-gateway/pay/{{intentFailId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "pay-a-fail-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"fail\",\n  \"delayMs\": 0\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Order cancelled after failed payment",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/orders/{{orderFailId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tries = Number(pm.collectionVariables.get('pollTries') || 0);",
+                  "if (!(pm.response.json().status === 'cancelled') && tries < 60) {",
+                  "  pm.collectionVariables.set('pollTries', tries + 1);",
+                  "  setTimeout(() => {}, 250);",
+                  "  pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset('pollTries');",
+                  "  pm.test('cancelled (payment_failed)', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.eql('cancelled');",
+                  "    pm.expect(pm.response.json().failureReason).to.eql('payment_failed');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hold released",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/holds/{{holdFailId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('hold released', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('released');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seat4 available again, seat1 still sold",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/events/{{eventId}}/seats",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('trạng thái ghế', () => {",
+                  "  const st = Object.fromEntries(pm.response.json().seats.map((s) => [s.seatId, s.status]));",
+                  "  pm.expect(st[pm.collectionVariables.get('seat4')]).to.eql('available');",
+                  "  pm.expect(st[pm.collectionVariables.get('seat1')]).to.eql('sold');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Payment timeout + refund (needs short PAYMENT_TIMEOUT)",
+      "description": "Quá payment_deadline: timeout worker nhả ghế, hủy đơn. Trả tiền muộn sau đó -> order yêu cầu hoàn tiền -> refunded. Chỉ chạy khi stack dựng với PAYMENT_TIMEOUT ngắn, vd `PAYMENT_TIMEOUT=20s make up`.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.collectionVariables.get('timeoutSkipped') === '1') {",
+              "  pm.execution.skipRequest();",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "User A holds seat5",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/events/{{eventId}}/holds",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "hold-a-late-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"seatIds\": [\n    \"{{seat5}}\"\n  ]\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + active', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.collectionVariables.set('holdLateId', pm.response.json().id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create order (will time out)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/orders",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "order-a-late-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{holdLateId}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 + awaiting_payment', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(pm.response.json().status).to.eql('awaiting_payment');",
+                  "  pm.collectionVariables.set('orderLateId', pm.response.json().id);",
+                  "});",
+                  "const waitMs = new Date(pm.response.json().paymentDeadline).getTime() - Date.now();",
+                  "if (waitMs > Number(pm.collectionVariables.get('maxWaitSec')) * 1000) {",
+                  "  console.warn(`Timeout: cần chờ ${Math.round(waitMs / 1000)}s > maxWaitSec, bỏ qua. Chạy stack với PAYMENT_TIMEOUT ngắn (vd 20s) để test phần này.`);",
+                  "  pm.collectionVariables.set('timeoutSkipped', '1');",
+                  "} else {",
+                  "  pm.collectionVariables.set('lateDeadline', pm.response.json().paymentDeadline);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Payment intent (late path)",
+          "request": {
+            "method": "GET",
+            "url": "{{paymentUrl}}/payments/orders/{{orderLateId}}",
+            "description": "Intent tạo bất đồng bộ nên poll tới khi có."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tries = Number(pm.collectionVariables.get('pollTries') || 0);",
+                  "if (!(pm.response.code === 200) && tries < 60) {",
+                  "  pm.collectionVariables.set('pollTries', tries + 1);",
+                  "  setTimeout(() => {}, 250);",
+                  "  pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset('pollTries');",
+                  "  pm.test('200 + requires_payment', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.eql('requires_payment');",
+                  "    pm.collectionVariables.set('intentLateId', pm.response.json().id);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wait past deadline -> order cancelled",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/orders/{{orderLateId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const waitMs = new Date(pm.collectionVariables.get('lateDeadline')).getTime() - Date.now();",
+                  "if (waitMs > 0 && !pm.collectionVariables.get('pollTries')) {",
+                  "  console.log(`Timeout: chờ ${Math.round(waitMs / 1000)}s tới payment_deadline...`);",
+                  "  setTimeout(() => {}, waitMs);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tries = Number(pm.collectionVariables.get('pollTries') || 0);",
+                  "if (!(pm.response.json().status === 'cancelled') && tries < 60) {",
+                  "  pm.collectionVariables.set('pollTries', tries + 1);",
+                  "  setTimeout(() => {}, 250);",
+                  "  pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset('pollTries');",
+                  "  pm.test('cancelled (payment_timeout)', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.eql('cancelled');",
+                  "    pm.expect(pm.response.json().failureReason).to.eql('payment_timeout');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hold released by timeout worker",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/holds/{{holdLateId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('hold released', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('released');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seat5 available again",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/events/{{eventId}}/seats",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('trạng thái ghế', () => {",
+                  "  const st = Object.fromEntries(pm.response.json().seats.map((s) => [s.seatId, s.status]));",
+                  "  pm.expect(st[pm.collectionVariables.get('seat5')]).to.eql('available');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Late payment (success)",
+          "request": {
+            "method": "POST",
+            "url": "{{paymentUrl}}/mock-gateway/pay/{{intentLateId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "pay-a-late-{{runId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"success\",\n  \"delayMs\": 0\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Order refunded",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/orders/{{orderLateId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "payment.succeeded đến khi đơn đã cancelled -> refund_requested -> payment.refunded."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tries = Number(pm.collectionVariables.get('pollTries') || 0);",
+                  "if (!(pm.response.json().status === 'refunded') && tries < 60) {",
+                  "  pm.collectionVariables.set('pollTries', tries + 1);",
+                  "  setTimeout(() => {}, 250);",
+                  "  pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset('pollTries');",
+                  "  pm.test('refunded (paid_after_cancel)', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.eql('refunded');",
+                  "    pm.expect(pm.response.json().failureReason).to.eql('paid_after_cancel');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Intent refunded",
+          "request": {
+            "method": "GET",
+            "url": "{{paymentUrl}}/payments/orders/{{orderLateId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('refunded (paid_after_cancel)', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('refunded');",
+                  "  pm.expect(pm.response.json().refundReason).to.eql('paid_after_cancel');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seat5 still available (not sold)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/events/{{eventId}}/seats",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('trạng thái ghế', () => {",
+                  "  const st = Object.fromEntries(pm.response.json().seats.map((s) => [s.seatId, s.status]));",
+                  "  pm.expect(st[pm.collectionVariables.get('seat5')]).to.eql('available');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. Expiry (needs short HOLD_TTL)",
       "description": "Chờ hold của B hết hạn, reaper trả ghế về available, rồi A giữ lại được. Bị bỏ qua nếu phải chờ quá `maxWaitSec` (HOLD_TTL mặc định 5m).",
       "event": [
         {

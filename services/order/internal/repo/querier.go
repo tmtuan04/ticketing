@@ -18,14 +18,25 @@ type Querier interface {
 	GetOrderByHold(ctx context.Context, holdID uuid.UUID) (Order, error)
 	// Đơn đã tạo bằng key này (client retry). Dùng unique index orders_user_idempotency_uidx.
 	GetOrderByIdempotencyKey(ctx context.Context, arg GetOrderByIdempotencyKeyParams) (Order, error)
+	// Gọi trong CÙNG transaction với thay đổi nghiệp vụ. 0 dòng = message_id đã xử lý (relay publish
+	// lại, hoặc consumer chết trước khi commit offset) -> bỏ qua.
+	InsertInbox(ctx context.Context, arg InsertInboxParams) (int64, error)
 	// Luôn gọi bên trong transaction nghiệp vụ (cùng tx với thay đổi của orders).
 	InsertOutbox(ctx context.Context, arg InsertOutboxParams) error
 	InsertSagaLog(ctx context.Context, arg InsertSagaLogParams) error
+	// Timeout worker: khóa một lô đơn chờ thanh toán đã quá hạn (dùng orders_payment_deadline_idx).
+	// SKIP LOCKED: nhiều replica chia nhau, và đơn consumer đang xử lý thì để consumer quyết định.
+	LockDueOrders(ctx context.Context, batchSize int32) ([]Order, error)
+	// Saga: khóa đơn trong suốt transaction xử lý một message (kể cả lúc gọi inventory). Consumer và
+	// timeout worker không bao giờ cùng đổi một đơn: worker dùng SKIP LOCKED nên bỏ qua đơn đang bị khóa.
+	LockOrder(ctx context.Context, id uuid.UUID) (Order, error)
 	// Relay: khóa một lô message chưa publish, cũ nhất trước. SKIP LOCKED: nhiều relay (nhiều
 	// replica order) chạy song song thì mỗi relay lấy một lô khác nhau, không publish trùng và không
 	// đứng chờ nhau. Khóa giữ tới khi transaction của relay COMMIT (sau khi đã publish xong).
 	LockUnpublished(ctx context.Context, batchSize int32) ([]LockUnpublishedRow, error)
 	MarkPublished(ctx context.Context, ids []int64) error
+	// Chỉ gọi khi đang giữ khóa dòng (LockOrder/LockDueOrders); service kiểm tra trạng thái nguồn trước.
+	UpdateOrderStatus(ctx context.Context, arg UpdateOrderStatusParams) (Order, error)
 }
 
 var _ Querier = (*Queries)(nil)

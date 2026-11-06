@@ -1,8 +1,8 @@
-// Package service chứa nghiệp vụ của order: tạo đơn từ một hold và (từ M5) điều phối Saga
-// thanh toán.
+// Package service chứa nghiệp vụ của order: tạo đơn từ một hold (file này) và điều phối Saga
+// thanh toán (saga.go).
 //
-// Order là "orchestrator" của Saga: nó gọi inventory đồng bộ qua gRPC (GetHold, ExtendHold, sau
-// này ConfirmHold/ReleaseHold) và nói chuyện với payment bất đồng bộ qua Redpanda. Mọi message
+// Order là "orchestrator" của Saga: nó gọi inventory đồng bộ qua gRPC (GetHold, ExtendHold,
+// ConfirmHold, ReleaseHold) và nói chuyện với payment bất đồng bộ qua Redpanda. Mọi message
 // gửi đi đều ghi vào bảng outbox trong CÙNG transaction với thay đổi của đơn (Transactional
 // Outbox), relay publish sau.
 package service
@@ -173,23 +173,12 @@ func (s *Service) insertOrder(ctx context.Context, p repo.CreateOrderParams, hol
 		}); err != nil {
 			return err
 		}
-		payload, err := json.Marshal(PaymentRequested{
+		return enqueue(ctx, q, order.ID, TopicPaymentCommands, TypePaymentRequested, PaymentRequested{
 			OrderID:         order.ID,
 			UserID:          order.UserID,
 			Amount:          order.Amount,
 			Currency:        order.Currency,
 			PaymentDeadline: order.PaymentDeadline,
-		})
-		if err != nil {
-			return err
-		}
-		return q.InsertOutbox(ctx, repo.InsertOutboxParams{
-			MessageID:   uuid.New(),
-			AggregateID: order.ID,
-			Topic:       TopicPaymentCommands,
-			Key:         order.ID.String(),
-			Type:        TypePaymentRequested,
-			Payload:     payload,
 		})
 	})
 	if err != nil {

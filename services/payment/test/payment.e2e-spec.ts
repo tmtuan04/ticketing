@@ -18,6 +18,7 @@ describe('Payment (e2e, Postgres + Redpanda)', () => {
   let prisma: PrismaService;
   let commands: Awaited<ReturnType<typeof commandProducer>>;
   let events: Awaited<ReturnType<typeof eventCollector>>;
+  let dlq: Awaited<ReturnType<typeof eventCollector>>;
   const http = () => request(app.getHttpServer());
 
   /** Gửi payment.requested như order service và chờ intent xuất hiện qua REST. */
@@ -50,14 +51,18 @@ describe('Payment (e2e, Postgres + Redpanda)', () => {
   const eventsFor = (orderId: string) => events.received.filter((e) => e.key === orderId);
 
   beforeAll(async () => {
-    [commands, events] = await Promise.all([commandProducer(), eventCollector()]);
+    [commands, events, dlq] = await Promise.all([
+      commandProducer(),
+      eventCollector(),
+      eventCollector('payment.commands.dlq'),
+    ]);
     app = await createApp();
     prisma = app.get(PrismaService);
   });
 
   afterAll(async () => {
     await app?.close();
-    await Promise.all([commands?.stop(), events?.stop()]);
+    await Promise.all([commands?.stop(), events?.stop(), dlq?.stop()]);
   });
 
   describe('payment.requested consumer', () => {
@@ -90,16 +95,95 @@ describe('Payment (e2e, Postgres + Redpanda)', () => {
       expect(await prisma.inboxMessage.count({ where: { messageId: { in: [messageId, marker] } } })).toBe(2);
     });
 
-    it('skips poison messages without blocking the partition', async () => {
+    it('moves poison messages to payment.commands.dlq without blocking the partition', async () => {
       const orderId = randomUUID();
-      await commands.send({ messageId: randomUUID(), type: 'payment.requested', key: orderId, value: '{oops' });
+      const bad = randomUUID();
+      await commands.send({ messageId: bad, type: 'payment.requested', key: orderId, value: '{oops' });
       await commands.send({ type: 'payment.requested', key: orderId, value: '{}' }); // không có message_id
       const unknown = randomUUID();
       await commands.send({ messageId: unknown, type: 'payment.unknown', key: orderId, value: '{}' });
       // các message trên cùng key nên cùng partition: lệnh hợp lệ phía sau vẫn được xử lý
       const { p } = await requestPayment({ order_id: orderId });
       expect(p.order_id).toBe(orderId);
+      // type lạ không phải poison: ghi inbox rồi bỏ qua
       expect(await prisma.inboxMessage.findUnique({ where: { messageId: unknown } })).not.toBeNull();
+
+      const inDlq = await waitFor(() => {
+        const r = dlq.received.filter((e) => e.key === orderId);
+        return r.length >= 2 ? r : undefined;
+      });
+      expect(inDlq).toHaveLength(2);
+      expect(inDlq[0]).toMatchObject({ messageId: bad, type: 'payment.requested', payload: '{oops' });
+      expect(inDlq[0].headers).toMatchObject({
+        dlq_source_topic: 'payment.commands',
+        dlq_attempts: '1',
+        dlq_error: expect.stringMatching(/JSON/),
+      });
+      expect(inDlq[1].messageId).toBeUndefined();
+      expect(inDlq[1].headers.dlq_error).toMatch(/message_id/);
+      // message lỗi không được ghi inbox
+      expect(await prisma.inboxMessage.findUnique({ where: { messageId: bad } })).toBeNull();
+    });
+  });
+
+  describe('payment.refund_requested consumer', () => {
+    const sendRefund = (p: { order_id: string }, intentId: string, overrides: Record<string, unknown> = {}) =>
+      commands.send({
+        messageId: randomUUID(),
+        type: 'payment.refund_requested',
+        key: p.order_id,
+        value: JSON.stringify({
+          order_id: p.order_id,
+          payment_intent_id: intentId,
+          amount: 2_000_000,
+          currency: 'VND',
+          reason: 'hold_expired',
+          ...overrides,
+        }),
+      });
+
+    it('refunds a succeeded intent once and publishes payment.refunded', async () => {
+      const { p, intent } = await requestPayment();
+      await pay(intent.id, { outcome: 'success' }).expect(202);
+      await intentStatus(p.order_id, 'succeeded');
+
+      await sendRefund(p, intent.id);
+      const done = await intentStatus(p.order_id, 'refunded');
+      expect(done.refundReason).toBe('hold_expired');
+      expect(new Date(done.refundedAt).getTime()).toBeGreaterThan(Date.now() - 60e3);
+
+      const refunded = await waitFor(() => eventsFor(p.order_id).find((e) => e.type === 'payment.refunded'));
+      expect(refunded.payload).toMatchObject({ order_id: p.order_id, payment_intent_id: intent.id, amount: 2_000_000 });
+
+      // order gửi lại lệnh (message_id mới): không hoàn lần hai
+      await sendRefund(p, intent.id);
+      const marker = randomUUID();
+      await commands.send({ messageId: marker, type: 'payment.unknown', key: p.order_id, value: '{}' });
+      await waitFor(() => prisma.inboxMessage.findUnique({ where: { messageId: marker } }));
+      await sleep(500); // cho relay kịp publish nếu (sai) có message thứ hai
+      expect(eventsFor(p.order_id).filter((e) => e.type === 'payment.refunded')).toHaveLength(1);
+    });
+
+    it('ignores a refund for an intent that was never paid', async () => {
+      const { p, intent } = await requestPayment();
+      await sendRefund(p, intent.id);
+      const marker = randomUUID();
+      await commands.send({ messageId: marker, type: 'payment.unknown', key: p.order_id, value: '{}' });
+      await waitFor(() => prisma.inboxMessage.findUnique({ where: { messageId: marker } }));
+      expect((await http().get(`/payments/orders/${p.order_id}`)).body.status).toBe('requires_payment');
+      // lệnh hoàn tiền bị bỏ qua không làm hỏng intent: vẫn trả tiền được như thường
+      await pay(intent.id, { outcome: 'timeout' }).expect(202);
+    });
+
+    it('sends a refund for an unknown order to the DLQ', async () => {
+      const orderId = randomUUID();
+      await sendRefund({ order_id: orderId }, randomUUID());
+      const [m] = await waitFor(() => {
+        const r = dlq.received.filter((e) => e.key === orderId);
+        return r.length ? r : undefined;
+      });
+      expect(m.type).toBe('payment.refund_requested');
+      expect(m.headers.dlq_error).toMatch(/no payment intent/);
     });
   });
 

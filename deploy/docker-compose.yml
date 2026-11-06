@@ -79,13 +79,15 @@ services:
   # Tạo topic một lần rồi thoát. Topic phải có trước với đủ partition (key = order_id phân tán lên
   # các partition, consumer group scale tới tối đa 3 replica). rpk báo lỗi nếu topic đã tồn tại nên
   # bỏ qua lỗi lúc tạo, rồi kiểm tra lại bằng describe: chạy `make up` nhiều lần vẫn thành công.
+  # Topic *.dlq chứa message consumer không xử lý được (xem trên Console), 1 partition là đủ.
   redpanda-init:
     image: redpandadata/redpanda:v24.2.7
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         rpk topic create payment.commands payment.events order.events -p 3 -r 1 -X brokers=redpanda:9092 || true
-        for t in payment.commands payment.events order.events; do
+        rpk topic create payment.commands.dlq payment.events.dlq -p 1 -r 1 -X brokers=redpanda:9092 || true
+        for t in payment.commands payment.events order.events payment.commands.dlq payment.events.dlq; do
           rpk topic describe "$$t" -X brokers=redpanda:9092 > /dev/null || exit 1
         done
     depends_on:
@@ -108,8 +110,9 @@ services:
       DATABASE_URL: postgres://app:app@postgres:5432/order_db?sslmode=disable
       INVENTORY_GRPC_URL: inventory:50051
       CATALOG_GRPC_URL: catalog:50052
-      # PAYMENT_TIMEOUT + HOLD_BUFFER phải <= MAX_HOLD_EXTENSION của inventory (mặc định 15m)
-      PAYMENT_TIMEOUT: 10m
+      # PAYMENT_TIMEOUT + HOLD_BUFFER phải <= MAX_HOLD_EXTENSION của inventory (mặc định 15m).
+      # Override khi cần test timeout + hoàn tiền nhanh: PAYMENT_TIMEOUT=20s make up
+      PAYMENT_TIMEOUT: ${PAYMENT_TIMEOUT:-10m}
       HOLD_BUFFER: 2m
       KAFKA_BROKERS: redpanda:9092
     ports: ["50053:50053"]

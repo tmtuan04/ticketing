@@ -1,4 +1,4 @@
-import { InvalidMessageError, parsePaymentRequested } from './events';
+import { InvalidMessageError, parsePaymentRequested, parseRefundRequested } from './events';
 
 const valid = {
   order_id: '0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d',
@@ -32,5 +32,27 @@ describe('parsePaymentRequested', () => {
 
   it('rejects an empty message', () => {
     expect(() => parsePaymentRequested(null)).toThrow(InvalidMessageError);
+  });
+});
+
+describe('parseRefundRequested', () => {
+  const refund = {
+    order_id: valid.order_id,
+    payment_intent_id: '2d3e4f50-6172-4c8d-8e9f-1a2b3c4d5e6f',
+    amount: 2_000_000,
+    currency: 'VND',
+    reason: 'hold_expired',
+  };
+
+  it('accepts the payload the Go order service produces', () => {
+    expect(parseRefundRequested(buf(refund))).toEqual(refund);
+  });
+
+  it.each([
+    ['bad intent id', { ...refund, payment_intent_id: 'x' }, /payment_intent_id must be a uuid/],
+    ['negative amount', { ...refund, amount: -1 }, /amount/],
+    ['missing reason', { ...refund, reason: '' }, /reason/],
+  ])('rejects %s', (_, payload, msg) => {
+    expect(() => parseRefundRequested(buf(payload))).toThrow(msg);
   });
 });

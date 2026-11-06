@@ -84,21 +84,31 @@ export interface ReceivedEvent {
   messageId: string;
   type: string;
   payload: any;
+  headers: Record<string, string | undefined>;
 }
 
-/** Đọc payment.events từ đầu topic và gom message lại để test kiểm tra. */
-export async function eventCollector() {
+/** Đọc một topic (mặc định payment.events) từ đầu và gom message lại để test kiểm tra. */
+export async function eventCollector(topic = 'payment.events') {
   const consumer: Consumer = kafka().consumer({ groupId: `collector-${randomUUID()}` });
   const received: ReceivedEvent[] = [];
   await consumer.connect();
-  await consumer.subscribe({ topic: 'payment.events', fromBeginning: true });
+  await consumer.subscribe({ topic, fromBeginning: true });
   await consumer.run({
     eachMessage: async ({ message }) => {
+      const raw = message.value!.toString();
       received.push({
         key: message.key!.toString(),
         messageId: header(message.headers, 'message_id')!,
         type: header(message.headers, 'type')!,
-        payload: JSON.parse(message.value!.toString()),
+        // message trong DLQ có thể không phải JSON hợp lệ
+        payload: (() => {
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return raw;
+          }
+        })(),
+        headers: Object.fromEntries(Object.keys(message.headers ?? {}).map((k) => [k, header(message.headers, k)])),
       });
     },
   });

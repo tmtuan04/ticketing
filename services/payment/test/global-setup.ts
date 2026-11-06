@@ -4,7 +4,7 @@ import { Kafka, logLevel } from 'kafkajs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
-export const TOPICS = ['payment.commands', 'payment.events'];
+export const TOPICS = ['payment.commands', 'payment.events', 'payment.commands.dlq'];
 
 // Một Postgres + một Redpanda cho cả bộ e2e (chạy --runInBand). Migration bằng chính prisma CLI,
 // topic tạo trước với 3 partition giống job redpanda-init của compose.

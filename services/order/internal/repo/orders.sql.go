@@ -177,3 +177,118 @@ func (q *Queries) InsertSagaLog(ctx context.Context, arg InsertSagaLogParams) er
 	)
 	return err
 }
+
+const lockDueOrders = `-- name: LockDueOrders :many
+SELECT id, user_id, event_id, hold_id, seat_ids, amount, currency, status, payment_deadline, failure_reason, idempotency_key, version, created_at, updated_at FROM orders
+WHERE status = 'awaiting_payment'
+  AND payment_deadline < now()
+ORDER BY payment_deadline
+LIMIT $1
+FOR UPDATE SKIP LOCKED
+`
+
+// Timeout worker: khóa một lô đơn chờ thanh toán đã quá hạn (dùng orders_payment_deadline_idx).
+// SKIP LOCKED: nhiều replica chia nhau, và đơn consumer đang xử lý thì để consumer quyết định.
+func (q *Queries) LockDueOrders(ctx context.Context, batchSize int32) ([]Order, error) {
+	rows, err := q.db.Query(ctx, lockDueOrders, batchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Order{}
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.EventID,
+			&i.HoldID,
+			&i.SeatIds,
+			&i.Amount,
+			&i.Currency,
+			&i.Status,
+			&i.PaymentDeadline,
+			&i.FailureReason,
+			&i.IdempotencyKey,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockOrder = `-- name: LockOrder :one
+SELECT id, user_id, event_id, hold_id, seat_ids, amount, currency, status, payment_deadline, failure_reason, idempotency_key, version, created_at, updated_at FROM orders
+WHERE id = $1
+FOR UPDATE
+`
+
+// Saga: khóa đơn trong suốt transaction xử lý một message (kể cả lúc gọi inventory). Consumer và
+// timeout worker không bao giờ cùng đổi một đơn: worker dùng SKIP LOCKED nên bỏ qua đơn đang bị khóa.
+func (q *Queries) LockOrder(ctx context.Context, id uuid.UUID) (Order, error) {
+	row := q.db.QueryRow(ctx, lockOrder, id)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.EventID,
+		&i.HoldID,
+		&i.SeatIds,
+		&i.Amount,
+		&i.Currency,
+		&i.Status,
+		&i.PaymentDeadline,
+		&i.FailureReason,
+		&i.IdempotencyKey,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateOrderStatus = `-- name: UpdateOrderStatus :one
+UPDATE orders
+SET status         = $1,
+    failure_reason = $2,
+    version        = version + 1,
+    updated_at     = now()
+WHERE id = $3
+RETURNING id, user_id, event_id, hold_id, seat_ids, amount, currency, status, payment_deadline, failure_reason, idempotency_key, version, created_at, updated_at
+`
+
+type UpdateOrderStatusParams struct {
+	Status        string
+	FailureReason string
+	ID            uuid.UUID
+}
+
+// Chỉ gọi khi đang giữ khóa dòng (LockOrder/LockDueOrders); service kiểm tra trạng thái nguồn trước.
+func (q *Queries) UpdateOrderStatus(ctx context.Context, arg UpdateOrderStatusParams) (Order, error) {
+	row := q.db.QueryRow(ctx, updateOrderStatus, arg.Status, arg.FailureReason, arg.ID)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.EventID,
+		&i.HoldID,
+		&i.SeatIds,
+		&i.Amount,
+		&i.Currency,
+		&i.Status,
+		&i.PaymentDeadline,
+		&i.FailureReason,
+		&i.IdempotencyKey,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

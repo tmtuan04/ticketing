@@ -77,6 +77,8 @@ export function toIntentView(i: PaymentIntent) {
     status: i.status,
     paymentDeadline: i.paymentDeadline.toISOString(),
     failureReason: i.failureReason || null,
+    refundReason: i.refundReason || null,
+    refundedAt: i.refundedAt?.toISOString() ?? null,
     createdAt: i.createdAt.toISOString(),
     updatedAt: i.updatedAt.toISOString(),
   };
