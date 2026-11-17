@@ -1,0 +1,31 @@
+{
+  "name": "@ticketing/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Giao diện demo trực quan cho hệ thống bán vé flash sale",
+  "engines": {
+    "node": ">=24.15"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@fontsource/ibm-plex-sans-condensed": "^5.3.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.0"
+  }
+}

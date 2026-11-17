@@ -210,6 +210,8 @@ services:
       JWT_ACCESS_SECRET: dev-only-secret-change-me-0123456789abcdef
       ADMIN_EMAIL: admin@ticketing.local
       ADMIN_PASSWORD: admin12345
+      # nới khi cần nhiều bot ở màn "Đua ghế" của web: RATE_LIMIT_AUTH=100 make up
+      RATE_LIMIT_AUTH: ${RATE_LIMIT_AUTH:-10}
     ports: ["3000:3000"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
@@ -222,6 +224,16 @@ services:
       catalog: { condition: service_healthy }
       order: { condition: service_healthy }
       gateway-migrate: { condition: service_completed_successfully }
+
+  # Giao diện demo (React, build tĩnh). nginx chuyển /api -> gateway, /pay -> payment.
+  # Cổng 4000 ở host để không đụng Vite dev server (5173) khi chạy `make web`.
+  web:
+    build:
+      context: ../web
+    ports: ["4000:80"]
+    depends_on:
+      gateway: { condition: service_healthy }
+      payment: { condition: service_healthy }
 
 volumes:
   pgdata:

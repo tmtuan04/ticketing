@@ -8,7 +8,7 @@ PAYMENT_DB_URL ?= postgresql://app:app@localhost:5440/payment_db
 ORDER_DB_URL ?= postgres://app:app@localhost:5440/order_db?sslmode=disable
 ORDER_MIGRATIONS := services/order/migrations
 
-.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new migrate-gateway migrate-catalog migrate-payment migrate-order migrate-order-down migrate-order-new test test-short test-inventory test-order test-gateway test-catalog test-payment e2e
+.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new migrate-gateway migrate-catalog migrate-payment migrate-order migrate-order-down migrate-order-new test test-short test-inventory test-order test-gateway test-catalog test-payment e2e web web-build
 
 up:
 	$(COMPOSE) up -d --build --wait
@@ -102,3 +102,11 @@ test-short:
 # Expiry và Payment timeout chỉ chạy khi stack dựng với TTL ngắn, vd `HOLD_TTL=15s PAYMENT_TIMEOUT=20s make up`.
 e2e:
 	postman collection run postman/ticketing-phase1.postman_collection.json
+
+# Giao diện demo (web/, React + Vite). Dev server ở http://localhost:5173, proxy /api -> :3000, /pay -> :3001
+# nên cần stack đang chạy (`make up`). `make up` cũng dựng sẵn bản build tĩnh ở http://localhost:4000.
+web:
+	cd web && npm install && npm run dev
+
+web-build:
+	cd web && npm install && npm run build

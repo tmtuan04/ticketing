@@ -20,6 +20,7 @@ Everything is driven from the root `Makefile` (Git Bash on Windows). Nest servic
 - `make test` — all tests (Go integration + Nest unit + e2e). Requires Docker running (testcontainers).
 - `make test-short` — unit tests only, no containers.
 - `make e2e` — Postman CLI collection (`postman/ticketing-phase1.postman_collection.json`) against a running stack via the gateway. Expiry/payment-timeout folders only pass with the short-TTL `make up` above.
+- `make web` — Vite dev server for the demo UI at http://localhost:5173 (needs the stack running). `make up` also serves a static build at http://localhost:4000. `cd web && npm run typecheck` to type-check.
 
 Single tests:
 - Go: `cd services/order && go test -race -run TestName ./internal/service/` (add `-short` to skip container-backed tests, which check `testing.Short()`).
@@ -43,6 +44,7 @@ order <──Redpanda (payment.commands / payment.events / order.events + *.dlq)
 - **Payment:** kafkajs consumer of `payment.commands` (inbox + `payment_intents` UNIQUE `order_id`), mock gateway `POST /mock-gateway/pay/:intentId` that calls back `POST /payments/webhook` with HMAC-SHA256 signature over the raw body, outbox relay and webhook worker built on the custom `PollLoop` (not `@nestjs/schedule`). Must register the snappy codec (`kafkajs-snappy`) because franz-go compresses with snappy.
 - **Retry/DLQ convention (same in Go and Nest):** contract-violating message → `<topic>.dlq` immediately; transient errors (Postgres/inventory down) → retry forever with backoff, never DLQ; other errors → `CONSUMER_MAX_ATTEMPTS` (5) then DLQ with `dlq_*` headers.
 - All background workers (reaper, relays, expiry, webhook worker) use `FOR UPDATE SKIP LOCKED` so they are safe to run on multiple replicas; preserve this when adding workers.
+- **Web demo UI (`web/`):** React 19 + Vite, standalone package (own `package-lock.json`, *not* in the root npm workspaces, no UI/router libraries). Visual style is a deliberate "box office" look defined by tokens at the top of `src/styles.css` (paper/ink palette, one red-orange accent, IBM Plex self-hosted via `@fontsource`, square corners, no shadows, no emoji); keep new UI consistent with it. Gateway and payment have no CORS, so the browser calls same-origin `/api/*` (→ gateway) and `/pay/*` (→ payment): proxied by `vite.config.ts` in dev and `web/nginx.conf` in compose. There is no list-orders or saga-log API, so the UI keeps order ids, observed status transitions and bot accounts in localStorage (`src/session.ts`) and derives the saga timeline from polled order + intent state (`src/components/SagaView.tsx`). API response types in `src/api.ts` mirror the gateway/payment `to*View` functions — update both together.
 - Go services share a layout (`cmd/server`, `internal/{config,grpcserver,service,repo}`, `migrations/`, `queries/`); images are distroless, so compose healthchecks call the binary's `healthcheck` subcommand.
 
 ## Testing notes
