@@ -12,3 +12,7 @@ go.work.sum
 
 # Tài liệu học tập cá nhân, không commit
 docs/
+
+# Load test: file seed (chứa JWT) và kết quả k6 sinh ra mỗi lần chạy
+loadtest/.data/
+loadtest/results/*.json

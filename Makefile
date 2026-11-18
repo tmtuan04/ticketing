@@ -1,4 +1,6 @@
 COMPOSE := docker compose -f deploy/docker-compose.yml
+# Stack load test = stack dev + override (nới rate limit, giới hạn CPU/RAM, container k6)
+LOADTEST_COMPOSE := $(COMPOSE) -f deploy/docker-compose.loadtest.yml
 
 INVENTORY_DB_URL ?= postgres://app:app@localhost:5440/inventory_db?sslmode=disable
 INVENTORY_MIGRATIONS := services/inventory/migrations
@@ -8,7 +10,7 @@ PAYMENT_DB_URL ?= postgresql://app:app@localhost:5440/payment_db
 ORDER_DB_URL ?= postgres://app:app@localhost:5440/order_db?sslmode=disable
 ORDER_MIGRATIONS := services/order/migrations
 
-.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new migrate-gateway migrate-catalog migrate-payment migrate-order migrate-order-down migrate-order-new test test-short test-inventory test-order test-gateway test-catalog test-payment e2e web web-build
+.PHONY: up down reset logs ps proto proto-lint sqlc migrate migrate-inventory migrate-inventory-down migrate-inventory-new migrate-gateway migrate-catalog migrate-payment migrate-order migrate-order-down migrate-order-new test test-short test-inventory test-order test-gateway test-catalog test-payment e2e web web-build loadtest-up loadtest-down seed loadtest verify
 
 up:
 	$(COMPOSE) up -d --build --wait
@@ -110,3 +112,29 @@ web:
 
 web-build:
 	cd web && npm install && npm run build
+
+# ---- Phase 3: load test (loadtest/) ----
+# Quy trình: `make loadtest-up` (một lần) -> `make seed` -> `make loadtest script=contention` -> `make verify`.
+# Mỗi lần seed tạo một event mới 100 ghế + 5.000 user có JWT ký sẵn; nên seed lại trước mỗi lần chạy k6.
+# k6 chạy trong container (không cần cài), kết quả JSON ghi vào loadtest/results/.
+# Gateway chạy GATEWAY_REPLICAS (mặc định 3) replica sau nginx (gateway-lb giữ cổng 3000 ở host).
+loadtest-up:
+	$(LOADTEST_COMPOSE) up -d --build --wait --remove-orphans
+
+# Quay về stack dev: `make loadtest-down && make up` (giữ nguyên volume, khác `make reset`)
+loadtest-down:
+	$(LOADTEST_COMPOSE) down --remove-orphans
+
+seed:
+	node loadtest/seed.mjs
+
+# Tham số k6 truyền qua biến môi trường, vd: VUS=2000 HOT_SEATS=20 make loadtest script=contention
+# hoặc open model (đo latency ở tải bền vững): RATE=1500 make loadtest script=contention
+script ?= contention
+loadtest:
+	MSYS_NO_PATHCONV=1 $(LOADTEST_COMPOSE) run --rm \
+		-e VUS -e RATE -e DURATION -e HOT_SEATS -e SEATS_PER_HOLD -e THINK_MS \
+		k6 run --summary-export /loadtest/results/$(script).json /loadtest/k6/$(script).js
+
+verify:
+	node loadtest/verify.mjs

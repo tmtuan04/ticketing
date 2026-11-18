@@ -1,0 +1,108 @@
+# Profile load test (Phase 3), ghép chồng lên docker-compose.yml:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.loadtest.yml ...
+# (Makefile đã gói sẵn: `make loadtest-up`, `make loadtest script=contention`.)
+#
+# Khác stack dev ở bốn điểm (điểm 4 là gateway nhiều replica sau nginx, xem phần gateway bên dưới):
+# 1. Nới rate limit: k6 có 5.000 user, mỗi user bấm giữ ghế liên tục; giới hạn 10/phút của dev sẽ biến
+#    phần lớn request thành 429 và ta đo rate limiter chứ không đo luồng giữ ghế. spike.js có thể
+#    override lại RATE_LIMIT_HOLD để kiểm tra chính rate limiter.
+# 2. Giảm log xuống warn: access log mỗi request (JSON ra stdout) tốn CPU đáng kể ở vài nghìn RPS.
+# 3. Cố định CPU/RAM từng container để kết quả đo tái lập được giữa các lần chạy và giữa các máy.
+#    k6 chạy riêng 2 CPU / 3 GB (5.000 VU tốn ~2 GB) để bản thân bộ sinh tải không tranh CPU với hệ thống.
+
+services:
+  postgres:
+    # max_connections mặc định 100 là đủ (mỗi service một pool nhỏ); tắt fsync/synchronous_commit
+    # sẽ làm số đo đẹp hơn nhưng sai bản chất, nên giữ nguyên độ bền như production.
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 1g }
+
+  redis:
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 256m }
+
+  redpanda:
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1500m }
+
+  inventory:
+    environment:
+      LOG_LEVEL: warn
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 256m }
+
+  catalog:
+    environment:
+      LOG_LEVEL: warn
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 384m }
+
+  order:
+    environment:
+      LOG_LEVEL: warn
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 256m }
+
+  payment:
+    environment:
+      LOG_LEVEL: warn
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 384m }
+
+  # Gateway chạy nhiều replica (GATEWAY_REPLICAS, mặc định 3) sau gateway-lb. Bỏ map port 3000 của
+  # stack dev (nhiều replica không cùng map một port host được); cổng 3000 ở host giờ là của LB nên
+  # seed.mjs, Postman và web vẫn gọi localhost:3000 như cũ.
+  gateway:
+    ports: !reset []
+    environment:
+      LOG_LEVEL: warn
+      RATE_LIMIT_DEFAULT: ${RATE_LIMIT_DEFAULT:-1000000}
+      RATE_LIMIT_HOLD: ${RATE_LIMIT_HOLD:-1000000}
+      RATE_LIMIT_ORDER: ${RATE_LIMIT_ORDER:-1000000}
+      # đứng sau đúng 1 proxy (gateway-lb): lấy IP client từ X-Forwarded-For cho rate limit theo IP
+      TRUST_PROXY: "1"
+    deploy:
+      replicas: ${GATEWAY_REPLICAS:-3}
+      resources:
+        limits: { cpus: "1.5", memory: 512m }
+
+  gateway-lb:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./loadtest/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports: ["3000:80"]
+    # backlog trong nginx.conf bị chặn bởi somaxconn của network namespace
+    sysctls:
+      net.core.somaxconn: 8192
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 5s
+      retries: 10
+    depends_on:
+      gateway: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 256m }
+
+  # Bộ sinh tải. Chỉ chạy khi gọi tường minh (`docker compose run k6 ...`), không lên cùng `up`.
+  # Chạy trong network của compose nên gọi gateway-lb / payment:3001, không qua port host.
+  k6:
+    image: grafana/k6:0.54.0
+    profiles: [loadtest]
+    volumes:
+      - ../loadtest:/loadtest
+    working_dir: /loadtest
+    environment:
+      BASE_URL: http://gateway-lb
+      PAY_URL: http://payment:3001
+      SEED_FILE: /loadtest/.data/seed.json
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 3g }
