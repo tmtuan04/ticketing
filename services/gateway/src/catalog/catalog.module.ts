@@ -3,6 +3,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { APP_CONFIG, type AppConfig } from '../config';
 import { InventoryModule } from '../inventory/inventory.module';
 import { AdminCatalogController } from './admin-catalog.controller';
+import { PublishedCatalogCache } from './catalog.cache';
 import { CATALOG_CLIENT, CatalogClient } from './catalog.client';
 import { TICKETING_CATALOG_V1_PACKAGE_NAME } from './catalog.pb';
 import { EventsController } from './events.controller';
@@ -28,6 +29,6 @@ import { EventsController } from './events.controller';
     ]),
   ],
   controllers: [EventsController, AdminCatalogController],
-  providers: [CatalogClient],
+  providers: [CatalogClient, PublishedCatalogCache],
 })
 export class CatalogModule {}

@@ -67,13 +67,16 @@ type Service struct {
 	pool      *pgxpool.Pool
 	q         *repo.Queries
 	inventory inventoryv1.InventoryServiceClient
-	catalog   catalogv1.CatalogServiceClient
+	prices    *priceCache // bảng giá của event đã publish, xem pricing.go
 	cfg       Config
 	log       *slog.Logger
 }
 
 func New(pool *pgxpool.Pool, inventory inventoryv1.InventoryServiceClient, catalog catalogv1.CatalogServiceClient, cfg Config, log *slog.Logger) *Service {
-	return &Service{pool: pool, q: repo.New(pool), inventory: inventory, catalog: catalog, cfg: cfg, log: log}
+	return &Service{
+		pool: pool, q: repo.New(pool), inventory: inventory,
+		prices: newPriceCache(catalog, cfg.CallTimeout), cfg: cfg, log: log,
+	}
 }
 
 // CreateRequest là input của CreateOrder (đã parse uuid ở tầng grpcserver).
@@ -88,7 +91,7 @@ type CreateRequest struct {
 // Luồng xử lý:
 //  1. replay: key đã dùng -> trả đơn cũ. Hold đã có đơn (key khác) -> ErrOrderExists.
 //  2. inventory.GetHold: hold phải của user và còn active.
-//  3. catalog: tính tiền theo giá vé (không tin giá từ client).
+//  3. catalog: tính tiền theo giá vé (không tin giá từ client), bảng giá cache theo event.
 //  4. inventory.ExtendHold: hold sống tới PaymentTimeout + HoldBuffer.
 //  5. MỘT transaction: INSERT orders + order_saga_log + outbox.
 //
@@ -250,46 +253,6 @@ func (s *Service) extendHold(ctx context.Context, req CreateRequest, ttl time.Du
 		return fromInventory("ExtendHold", err)
 	}
 	return nil
-}
-
-// price tính tổng tiền các ghế của hold theo giá hạng vé trong catalog. Catalog chỉ cho một loại
-// tiền mỗi event nên mọi hạng vé cùng currency.
-func (s *Service) price(ctx context.Context, hold *inventoryv1.Hold) (int64, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.cfg.CallTimeout)
-	defer cancel()
-	ev, err := s.catalog.GetEvent(ctx, &catalogv1.GetEventRequest{EventId: hold.GetEventId()})
-	if err != nil {
-		return 0, "", fmt.Errorf("%w: catalog.GetEvent: %v", ErrUnavailable, err)
-	}
-	// Đọc cả sơ đồ ghế của event rồi lọc: đơn giản, đủ nhanh với vài nghìn ghế. Nếu event rất
-	// lớn thì thêm RPC lấy ghế theo danh sách id.
-	seats, err := s.catalog.ListSeats(ctx, &catalogv1.ListSeatsRequest{EventId: hold.GetEventId()})
-	if err != nil {
-		return 0, "", fmt.Errorf("%w: catalog.ListSeats: %v", ErrUnavailable, err)
-	}
-
-	tiers := map[string]*catalogv1.TicketTier{}
-	for _, t := range ev.GetEvent().GetTiers() {
-		tiers[t.GetId()] = t
-	}
-	seatTier := map[string]string{}
-	for _, st := range seats.GetSeats() {
-		seatTier[st.GetId()] = st.GetTierId()
-	}
-	var (
-		amount   int64
-		currency string
-	)
-	for _, id := range hold.GetSeatIds() {
-		t, ok := tiers[seatTier[id]]
-		if !ok {
-			// Ghế đã được giữ ở inventory mà catalog không biết giá: dữ liệu hai bên lệch nhau.
-			return 0, "", fmt.Errorf("catalog has no price for seat %s of event %s", id, hold.GetEventId())
-		}
-		amount += t.GetPriceAmount()
-		currency = t.GetCurrency()
-	}
-	return amount, currency, nil
 }
 
 // GetOrder đọc đơn theo id.

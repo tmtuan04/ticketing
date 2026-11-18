@@ -2,6 +2,7 @@ import { status } from '@grpc/grpc-js';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { PublishedCatalogCache } from '../src/catalog/catalog.cache';
 import {
   ADMIN,
   createApp,
@@ -64,6 +65,8 @@ describe('Events & admin catalog (e2e, fake catalog + inventory)', () => {
   afterEach(() => {
     catalog.reset();
     inventory.reset();
+    // các test dùng chung một EVENT id với dữ liệu catalog khác nhau
+    app.get(PublishedCatalogCache).clear();
   });
 
   afterAll(async () => {
@@ -126,6 +129,19 @@ describe('Events & admin catalog (e2e, fake catalog + inventory)', () => {
           { seatId: SEAT_C, section: 'A', row: '1', number: 3, tierId: TIER, status: 'unknown' },
         ],
       });
+    });
+
+    it('caches the catalog part of a published seat map but always asks inventory for availability', async () => {
+      catalog.handlers.GetEvent = () => ({ event: pbEvent() });
+      catalog.handlers.ListSeats = () => ({ seats: [{ id: SEAT_A, section: 'A', row: '1', number: 1, tierId: TIER }] });
+      inventory.handlers.ListSeatAvailability = () => ({ seats: [{ seatId: SEAT_A, status: 1 }] });
+      await http().get(`/events/${EVENT}/seats`).expect(200);
+
+      inventory.handlers.ListSeatAvailability = () => ({ seats: [{ seatId: SEAT_A, status: 3 }] });
+      const res = await http().get(`/events/${EVENT}/seats`).expect(200);
+      expect(res.body.seats[0].status).toBe('sold');
+      expect(catalog.calls.map((c) => c.method).sort()).toEqual(['GetEvent', 'ListSeats']);
+      expect(inventory.calls).toHaveLength(2);
     });
 
     it('does not expose the seat map of a draft event', async () => {
