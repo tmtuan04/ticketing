@@ -131,11 +131,14 @@ seed:
 # Tham số k6 truyền qua biến môi trường, vd: VUS=2000 HOT_SEATS=20 make loadtest script=contention
 # hoặc open model (đo latency ở tải bền vững): RATE=1500 make loadtest script=contention
 # Luồng Saga trọn vẹn: VUS=300 MIX=70,20,10,0 make loadtest script=full_flow (xem đầu file full_flow.js)
+# Spike cần rate limit THẬT: `RATE_LIMIT_HOLD=10 make loadtest-up` rồi `make loadtest script=spike`
+# (script tự thăm dò và dừng nếu gateway còn rate limit nới); xong thì `make loadtest-up` để nới lại.
 script ?= contention
 loadtest:
 	MSYS_NO_PATHCONV=1 $(LOADTEST_COMPOSE) run --rm \
 		-e VUS -e RATE -e DURATION -e HOT_SEATS -e SEATS_PER_HOLD -e THINK_MS \
 		-e MIX -e POLL_MS -e INTENT_WAIT_MS -e SETTLE_WAIT_MS -e LATE_MARGIN_MS -e GRACEFUL_STOP \
+		-e PEAK -e RAMP -e HOLD_PEAK -e RATE_LIMIT_HOLD -e RATE_LIMIT_WINDOW_SEC -e RECOVERY_RATE -e RECOVERY_FOR \
 		k6 run --summary-export /loadtest/results/$(script).json /loadtest/k6/$(script).js
 
 verify:
