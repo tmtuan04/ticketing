@@ -41,8 +41,9 @@ async function snapshot(dbs, eventId, graceSec) {
   const orders = await q(ord, `SELECT id, hold_id, seat_ids, status, failure_reason, payment_deadline FROM orders WHERE event_id = $1`, [eventId]);
   const orderIds = orders.map((o) => o.id);
   const intents = orderIds.length
-    ? await q(pay, `SELECT order_id, status::text AS status FROM payment_intents WHERE order_id = ANY($1::uuid[])`, [orderIds])
+    ? await q(pay, `SELECT id, order_id, status::text AS status FROM payment_intents WHERE order_id = ANY($1::uuid[])`, [orderIds])
     : [];
+  const intentIds = intents.map((i) => i.id);
 
   // Các kiểm tra viết thẳng bằng SQL trong một DB.
   const sql = {
@@ -85,6 +86,18 @@ async function snapshot(dbs, eventId, graceSec) {
     // Outbox xét toàn bộ bảng (không lọc event): message nào còn kẹt cũng là vấn đề.
     orderOutboxPending: await q(ord, `SELECT count(*)::int AS n FROM outbox WHERE published_at IS NULL`),
     paymentOutboxPending: await q(pay, `SELECT count(*)::int AS n FROM outbox WHERE published_at IS NULL`),
+    // Webhook cổng giả lập chưa gửi (charge 'timeout' cố ý không bao giờ gửi). Nhánh "trả muộn" của
+    // full_flow.js đặt lịch webhook sau deadline: chưa gửi xong thì đơn cancelled + intent
+    // requires_payment trông vẫn hợp lệ, nên phải chờ tới khi gửi hết mới chốt kết quả.
+    // Chỉ xét charge của event này: charge cũ của stack dev không liên quan.
+    mockChargesPending: intentIds.length
+      ? await q(
+          pay,
+          `SELECT count(*)::int AS n FROM mock_charges
+            WHERE intent_id = ANY($1::uuid[]) AND delivered_at IS NULL AND outcome <> 'timeout'`,
+          [intentIds],
+        )
+      : [{ n: 0 }],
   };
   return { seats, holds, orders, intents, sql };
 }
@@ -163,6 +176,7 @@ function evaluate(snap, capacity) {
   );
   add('outbox của order đã publish hết', sql.orderOutboxPending[0].n ? [`${sql.orderOutboxPending[0].n} pending`] : []);
   add('outbox của payment đã publish hết', sql.paymentOutboxPending[0].n ? [`${sql.paymentOutboxPending[0].n} pending`] : []);
+  add('webhook của cổng giả lập đã gửi hết', sql.mockChargesPending[0].n ? [`${sql.mockChargesPending[0].n} pending`] : []);
   return checks;
 }
 

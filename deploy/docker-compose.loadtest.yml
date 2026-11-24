@@ -45,6 +45,9 @@ services:
   order:
     environment:
       LOG_LEVEL: warn
+      # full_flow.js có nhánh bỏ ngang/trả muộn phải chờ hết hạn thanh toán: 10m của dev thì một lần
+      # chạy mất hơn 10 phút. 30s vẫn đủ dài để nhánh trả ngay không bao giờ chạm deadline.
+      PAYMENT_TIMEOUT: ${PAYMENT_TIMEOUT:-30s}
     deploy:
       resources:
         limits: { cpus: "1", memory: 256m }
