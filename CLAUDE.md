@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Flash-sale ticketing system: NestJS + Go microservices talking over gRPC and Kafka (Redpanda). Core problems: many users racing for the same seat (no overselling), seat holds with TTL, and payments failing mid-flow (Saga + Transactional Outbox/Inbox). `PLAN.md` is the source of truth for scope, milestones and per-milestone "Trạng thái" notes recording where the implementation deliberately differs from the plan — read the relevant section before changing a service. Phases 0–2 (M0–M6) are done; Phase 3 (k6 load test + `verify.sql` invariants, `loadtest/k6/`) and Phase 4 (Kubernetes) are not yet implemented.
+Flash-sale ticketing system: NestJS + Go microservices talking over gRPC and Kafka (Redpanda). Core problems: many users racing for the same seat (no overselling), seat holds with TTL, and payments failing mid-flow (Saga + Transactional Outbox/Inbox). `PLAN.md` is the source of truth for scope, milestones and per-milestone "Trạng thái" notes recording where the implementation deliberately differs from the plan — read the relevant section before changing a service. Phases 0–3 (M0–M7) are done: Phase 3 is the k6 load test (`loadtest/k6/`) plus `loadtest/verify.mjs` (17 cross-DB invariants; replaces the plan's `verify.sql`), with measured results in `loadtest/RESULTS.md`. Phase 4 (Kubernetes, M8–M9) is not yet implemented.
 
 Code comments, docs, Makefile comments and PLAN.md are written in Vietnamese; follow that convention for comments. `docs/` is gitignored (personal study notes) — don't put committed deliverables there. `/main.go` at the root is an ignored scratch file, not part of the project.
 
@@ -20,6 +20,7 @@ Everything is driven from the root `Makefile` (Git Bash on Windows). Nest servic
 - `make test` — all tests (Go integration + Nest unit + e2e). Requires Docker running (testcontainers).
 - `make test-short` — unit tests only, no containers.
 - `make e2e` — Postman CLI collection (`postman/ticketing-phase1.postman_collection.json`) against a running stack via the gateway. Expiry/payment-timeout folders only pass with the short-TTL `make up` above.
+- Load test (Phase 3): `make loadtest-up` (compose + `deploy/docker-compose.loadtest.yml`: 3 gateway replicas behind nginx `gateway-lb`, CPU/RAM limits, relaxed rate limits) → `make seed` (new 100-seat event + 5,000 users with pre-signed JWTs in gitignored `loadtest/.data/seed.json`; re-seed before each run) → `make loadtest script=contention|full_flow|spike` (k6 runs in a container, summary to gitignored `loadtest/results/<script>.json`) → `make verify` (exits 1 on any FAIL). `spike` needs real limits: `RATE_LIMIT_HOLD=10 make loadtest-up`. Back to dev: `make loadtest-down && make up`. Scenario params are documented at the top of each k6 file.
 - `make web` — Vite dev server for the demo UI at http://localhost:5173 (needs the stack running). `make up` also serves a static build at http://localhost:4000. `cd web && npm run typecheck` to type-check.
 
 Single tests:

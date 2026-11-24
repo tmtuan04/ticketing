@@ -203,6 +203,8 @@ Kết quả đo trên Docker Desktop (Windows, VM 12 vCPU / 8 GB), mỗi contain
 
 Load test cũng tìm ra nút thắt thật: lần đầu chạy `full_flow`, catalog (một tiến trình Node) bão hòa ở khoảng 100 lượt xem sơ đồ ghế mỗi giây. Kết quả là 95% request tạo đơn bị 504 và chỉ bán được 59/100 ghế, dù bất biến vẫn PASS: quá tải làm mất doanh thu chứ không làm sai dữ liệu. Cách sửa là cache dữ liệu catalog của event đã publish (dữ liệu này bất biến) ở gateway và order, kèm gộp request trùng khi cache còn trống. Sau khi sửa: 0 lỗi, bán hết 100/100 ghế.
 
+Số đo chi tiết (cấu hình từng container, latency theo từng bước và từng nhánh Saga, trước/sau khi sửa nút thắt) nằm ở [loadtest/RESULTS.md](loadtest/RESULTS.md).
+
 ## Chạy thử
 
 **Cần có:** Docker, GNU make (trên Windows dùng Git Bash), Node 24 (`.nvmrc`) cho seed, verify và test Nest, Go 1.27 cho test Go.
